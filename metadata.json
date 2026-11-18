@@ -1,0 +1,6 @@
+{
+  "name": "SONORA",
+  "description": "Offline-first personal music player and local audio library PWA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
