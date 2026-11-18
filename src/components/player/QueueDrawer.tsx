@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ListMusic, Trash2, X } from 'lucide-react';
+import { ListMusic, ListOrdered, Repeat, Repeat1, Shuffle, Sparkles, Trash2, X } from 'lucide-react';
 import { useLibraryStore } from '../../store/useLibraryStore';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { formatDuration } from '../../utils/formatters';
@@ -10,6 +10,10 @@ export const QueueDrawer: React.FC = () => {
   const setQueueOpen = usePlayerStore((s) => s.setQueueOpen);
   const queueTrackIds = usePlayerStore((s) => s.queueTrackIds);
   const queueIndex = usePlayerStore((s) => s.queueIndex);
+  const shuffle = usePlayerStore((s) => s.shuffle);
+  const smartShuffle = usePlayerStore((s) => s.smartShuffle);
+  const repeat = usePlayerStore((s) => s.repeat);
+  const setPlaybackOrder = usePlayerStore((s) => s.setPlaybackOrder);
   const jumpToQueueIndex = usePlayerStore((s) => s.jumpToQueueIndex);
   const removeFromQueue = usePlayerStore((s) => s.removeFromQueue);
   const clearQueue = usePlayerStore((s) => s.clearQueue);
@@ -17,6 +21,16 @@ export const QueueDrawer: React.FC = () => {
   const tracks = useLibraryStore((s) => s.tracks);
 
   const trackMap = useMemo(() => new Map(tracks.map((t) => [t.id, t])), [tracks]);
+
+  const activeOrderMode = smartShuffle
+    ? 'smart_shuffle'
+    : shuffle
+      ? 'shuffle'
+      : repeat === 'one'
+        ? 'repeat_one'
+        : repeat === 'all'
+          ? 'repeat_all'
+          : 'sequential';
 
   if (!isQueueOpen) return null;
 
@@ -51,6 +65,69 @@ export const QueueDrawer: React.FC = () => {
             <X className="w-4 h-4" />
           </button>
         </div>
+      </div>
+
+      <div className="px-4 py-2 border-b border-white/[0.06] grid grid-cols-5 gap-1 bg-[#050507]/70">
+        <button
+          type="button"
+          onClick={() => setPlaybackOrder('sequential')}
+          className={`inline-flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+            activeOrderMode === 'sequential'
+              ? 'bg-white/10 text-white'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <ListOrdered className="w-3 h-3" />
+          <span>Seq</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPlaybackOrder('shuffle')}
+          className={`inline-flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+            activeOrderMode === 'shuffle'
+              ? 'bg-red-600/20 text-red-300'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <Shuffle className="w-3 h-3" />
+          <span>Shuf</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPlaybackOrder('smart_shuffle')}
+          className={`inline-flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+            activeOrderMode === 'smart_shuffle'
+              ? 'bg-red-600 text-white'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <Sparkles className="w-3 h-3" />
+          <span>Smart</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPlaybackOrder('repeat_all')}
+          className={`inline-flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+            activeOrderMode === 'repeat_all'
+              ? 'bg-red-600/20 text-red-300'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <Repeat className="w-3 h-3" />
+          <span>All</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPlaybackOrder('repeat_one')}
+          className={`inline-flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+            activeOrderMode === 'repeat_one'
+              ? 'bg-red-600/20 text-red-300'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <Repeat1 className="w-3 h-3" />
+          <span>One</span>
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto divide-y divide-white/[0.04]">

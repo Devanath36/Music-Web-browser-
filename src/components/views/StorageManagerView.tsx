@@ -19,6 +19,7 @@ import {
   computeFormatStorageBreakdown,
   computeStorageDashboardMetrics,
 } from '../../utils/storageMetrics';
+import { IndexedDbQuotaCard } from '../storage/IndexedDbQuotaCard';
 import { StorageUsageDashboard } from '../storage/StorageUsageDashboard';
 
 export const StorageManagerView: React.FC = () => {
@@ -250,6 +251,18 @@ export const StorageManagerView: React.FC = () => {
         </div>
       )}
 
+      {/* IndexedDB Usage vs Total Quota Visual Summary Component */}
+      <IndexedDbQuotaCard
+        isLoading={isDashboardLoading}
+        usageBytes={storageBreakdown?.usageBytes ?? null}
+        quotaBytes={storageBreakdown?.quotaBytes ?? null}
+        audioBytes={combined.audioUsedBytes}
+        artworkBytes={combined.artworkBytes}
+        persisted={combined.persisted}
+        verifiedBlobCount={storageBreakdown?.verifiedBlobCount ?? localTracks.length}
+        localTrackCount={localTracks.length}
+      />
+
       {/* Detailed Storage Usage Dashboard Component */}
       <StorageUsageDashboard
         isLoading={isDashboardLoading}
@@ -269,12 +282,17 @@ export const StorageManagerView: React.FC = () => {
         onOpenImport={() => setActiveView('import')}
       />
 
-      {/* Sequential Overflow & Browser Quota Clarification */}
-      <div className="rounded-xl border border-white/[0.07] bg-[#0B0C10] px-4 py-3 flex items-start gap-3 text-xs text-gray-400">
+      {/* Sequential Overflow, IndexedDB Blob Verification & Browser Quota Clarification */}
+      <div className="rounded-xl border border-white/[0.07] bg-[#0B0C10] px-4 py-3 flex items-start gap-3 text-xs text-gray-400 leading-relaxed">
         <Info className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-        <p>
-          Imported songs are saved sequentially to Storage 1 (25 GB primary limit) first based on actual file size in bytes, and automatically overflow into Storage 2 (25 GB secondary limit) once Storage 1 lacks space for a song. Individual songs are never split, and importing pauses safely without deleting or overwriting existing music if both partitions reach capacity.
-        </p>
+        <div className="space-y-1">
+          <p>
+            Imported songs are committed as standalone audio Blobs in this browser&apos;s local IndexedDB ({storageBreakdown?.verifiedBlobCount ?? localTracks.length} / {localTracks.length} local audio Blobs verified) and allocated sequentially to Storage 1 (25 GB) first, then Storage 2 (25 GB).
+          </p>
+          <p className="text-gray-500">
+            Storage is isolated per browser (Edge, Chrome, Samsung Internet, Opera each keep their own independent library). Even with Persistent Storage granted, browser storage can still be removed if you clear site data/cookies, use Private/Incognito mode, uninstall the browser, or under extreme OS disk pressure.
+          </p>
+        </div>
       </div>
 
       {/* Track Partition Browser & Mover */}

@@ -2,6 +2,10 @@ import { create } from 'zustand';
 import { audioEngine, EQ_PRESETS } from '../audio/audioEngine';
 import {
   DEFAULT_EQUALIZER_SETTINGS,
+  DEFAULT_LISTENING_ROOM_SETTINGS,
+  DEFAULT_SPATIAL_AUDIO_SETTINGS,
+  DEFAULT_VISUALIZER_SETTINGS,
+  bulkUpdateTracksMetadata,
   ensureStorageAllocations,
   getOrInitEqualizerSettings,
   getOrInitSettings,
@@ -9,44 +13,79 @@ import {
   getStorageBreakdown,
   isQuotaExceededError,
   moveTracksToStorageSection,
+  openSonoraDatabase,
   removeTrackCompletely,
+  restoreSoftDeletedTracks,
   saveTrackBatch,
+  softDeleteTracks,
   sonoraDb,
+  undoTrackMetadataUpdate,
   updateTrackMetadata,
   type StagedTrackImport,
 } from '../db/sonoraDb';
 import { formatBytes } from '../utils/formatters';
+import {
+  DEFAULT_CROSSFADE_SECONDS,
+  resolveTransitionConfig,
+} from '../utils/crossfadeEngine';
+import {
+  applyCustomSpatialProfileSettings,
+  createCustomSpatialProfile,
+  getSpatialPresetSettings,
+} from '../utils/spatialAudioPresets';
 import { allocateSequentialStorageSection } from '../utils/storageMetrics';
 import type {
   AppSettingsRecord,
   AppView,
+  CustomSpatialProfile,
+  DjMixRecord,
+  DjPresetConfig,
   EqualizerPresetId,
   EqualizerSettingsRecord,
   ImportJobState,
+  ListeningEventRecord,
   NetworkMode,
   PlaybackRestorePolicy,
   Playlist,
   PlaylistTrack,
+  ProcessedStemRecord,
   RecentlyPlayedEntry,
+  RecommendationFeedbackRecord,
+  SmartPlaylistRecord,
   SortDirection,
   SortField,
+  SpatialAudioMode,
+  SpatialAudioSettings,
   StorageBreakdown,
   StorageSectionId,
   Track,
+  TrackLyricsRecord,
   TransferHistoryRecord,
+  VisualizerSettings,
 } from '../types/music';
 import { artworkCache } from '../utils/artworkCache';
 import { canBrowserPlayFile, getFileExtension, isSupportedAudioFile } from '../utils/formatters';
-import { requestPersistentStorage } from '../utils/storage';
+import {
+  getStorageEstimate,
+  materializeAudioBlob,
+  requestPersistentStorage,
+} from '../utils/storage';
 import type { WorkerAnalyzeResult } from '../workers/importWorker';
 
 interface LibraryState {
   isLoaded: boolean;
   tracks: Track[];
+  deletedTracks: Track[];
   playlists: Playlist[];
   playlistTracks: PlaylistTrack[];
+  smartPlaylists: SmartPlaylistRecord[];
   favoriteIds: Set<string>;
   recentlyPlayed: RecentlyPlayedEntry[];
+  listeningEvents: ListeningEventRecord[];
+  lyricsRecords: TrackLyricsRecord[];
+  djMixes: DjMixRecord[];
+  processedStems: ProcessedStemRecord[];
+  recommendationFeedback: RecommendationFeedbackRecord[];
   transferHistory: TransferHistoryRecord[];
   equalizer: EqualizerSettingsRecord;
   settings: AppSettingsRecord;
@@ -72,10 +111,23 @@ interface LibraryState {
   setSort: (sortBy: SortField, sortDir: SortDirection) => Promise<void>;
   setNetworkMode: (mode: NetworkMode) => Promise<void>;
   setPlaybackRestorePolicy: (policy: PlaybackRestorePolicy) => Promise<void>;
+  updateVisualizerSettings: (patch: Partial<VisualizerSettings>) => Promise<void>;
+  updateSpatialAudioSettings: (patch: Partial<SpatialAudioSettings>) => Promise<void>;
+  selectSpatialAudioMode: (mode: SpatialAudioMode) => Promise<void>;
+  saveCustomSpatialProfile: (name: string, includeEq?: boolean) => Promise<CustomSpatialProfile>;
+  applyCustomSpatialProfile: (profileId: string) => Promise<void>;
+  deleteCustomSpatialProfile: (profileId: string) => Promise<void>;
+  saveCustomDjPreset: (preset: DjPresetConfig) => Promise<void>;
+  deleteCustomDjPreset: (presetId: string) => Promise<void>;
+  updateAppSettings: (patch: Partial<AppSettingsRecord>) => Promise<void>;
   requestPersistStorage: () => Promise<boolean>;
 
   toggleFavorite: (trackId: string) => Promise<void>;
   removeTrack: (trackId: string) => Promise<void>;
+  softRemoveTracks: (trackIds: string[]) => Promise<number>;
+  restoreDeletedTracks: (trackIds: string[]) => Promise<number>;
+  permanentlyDeleteTracks: (trackIds: string[]) => Promise<void>;
+  emptyTrash: () => Promise<void>;
   editTrackMetadata: (
     trackId: string,
     updates: {
@@ -84,12 +136,51 @@ interface LibraryState {
       album: string;
       albumArtist: string;
       genre: string;
+      composer?: string;
       year: number | null;
       trackNumber: number | null;
+      discNumber?: number | null;
+      rating?: number | null;
+      customTags?: Record<string, string>;
+      artworkFile?: { blob: Blob; mimeType: string } | null;
     }
   ) => Promise<void>;
+  bulkEditTracksMetadata: (
+    trackIds: string[],
+    patch: {
+      artist?: string;
+      album?: string;
+      albumArtist?: string;
+      genre?: string;
+      composer?: string;
+      year?: number | null;
+      rating?: number | null;
+    }
+  ) => Promise<number>;
+  undoTrackMetadata: (trackId: string) => Promise<boolean>;
   updateTrackDuration: (trackId: string, duration: number) => void;
   moveTracksStorage: (trackIds: string[], targetSection: StorageSectionId) => Promise<number>;
+
+  createSmartPlaylist: (
+    input: Omit<SmartPlaylistRecord, 'id' | 'createdAt' | 'updatedAt'>
+  ) => Promise<SmartPlaylistRecord>;
+  updateSmartPlaylist: (
+    id: string,
+    patch: Partial<Omit<SmartPlaylistRecord, 'id' | 'createdAt' | 'updatedAt'>>
+  ) => Promise<void>;
+  deleteSmartPlaylist: (id: string) => Promise<void>;
+
+  saveDjMix: (mix: Omit<DjMixRecord, 'id' | 'createdAt'> & { id?: string; createdAt?: number }) => Promise<DjMixRecord>;
+  deleteDjMix: (id: string) => Promise<void>;
+
+  saveLyrics: (record: TrackLyricsRecord) => Promise<void>;
+  deleteLyrics: (trackId: string) => Promise<void>;
+
+  saveProcessedStem: (stem: ProcessedStemRecord) => Promise<void>;
+  deleteProcessedStem: (id: string) => Promise<void>;
+
+  setRecommendationFeedback: (trackId: string, feedback: 'liked' | 'disliked' | null) => Promise<void>;
+  clearAnalyticsData: () => Promise<void>;
 
   setEqualizerEnabled: (enabled: boolean) => Promise<void>;
   selectEqualizerPreset: (preset: EqualizerPresetId) => Promise<void>;
@@ -141,10 +232,17 @@ let pausedRemainingFiles: File[] = [];
 export const useLibraryStore = create<LibraryState>((set, get) => ({
   isLoaded: false,
   tracks: [],
+  deletedTracks: [],
   playlists: [],
   playlistTracks: [],
+  smartPlaylists: [],
   favoriteIds: new Set<string>(),
   recentlyPlayed: [],
+  listeningEvents: [],
+  lyricsRecords: [],
+  djMixes: [],
+  processedStems: [],
+  recommendationFeedback: [],
   transferHistory: [],
   equalizer: DEFAULT_EQUALIZER_SETTINGS,
   settings: {
@@ -154,6 +252,19 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     persistStorageRequested: false,
     sortBy: 'addedAt',
     sortDir: 'desc',
+    gaplessEnabled: true,
+    transitionMode: 'gapless',
+    crossfadeEnabled: false,
+    crossfadeSeconds: DEFAULT_CROSSFADE_SECONDS,
+    deletedRetentionDays: 30,
+    analyticsEnabled: true,
+    voiceControlEnabled: false,
+    audioOutputDeviceId: '',
+    customShortcuts: {},
+    listeningRoom: DEFAULT_LISTENING_ROOM_SETTINGS,
+    visualizer: DEFAULT_VISUALIZER_SETTINGS,
+    spatialAudio: DEFAULT_SPATIAL_AUDIO_SETTINGS,
+    customSpatialProfiles: [],
     updatedAt: Date.now(),
   },
   storageBreakdown: null,
@@ -166,14 +277,26 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   importJob: INITIAL_IMPORT_JOB,
 
   initializeLibrary: async () => {
+    try {
+      await openSonoraDatabase();
+    } catch {
+      // Proceed to read/fallback cleanly without deleting existing DB
+    }
+
     const [
       settings,
       equalizer,
-      tracks,
+      rawTracks,
       playlists,
       playlistTracks,
+      smartPlaylists,
       favorites,
       recentlyPlayed,
+      listeningEvents,
+      lyricsRecords,
+      djMixes,
+      processedStems,
+      recommendationFeedback,
       transferHistory,
     ] = await Promise.all([
       getOrInitSettings(),
@@ -181,48 +304,140 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       sonoraDb.tracks.toArray(),
       sonoraDb.playlists.orderBy('createdAt').reverse().toArray(),
       sonoraDb.playlistTracks.toArray(),
+      sonoraDb.smartPlaylists.orderBy('createdAt').reverse().toArray().catch(() => []),
       sonoraDb.favorites.toArray(),
-      sonoraDb.recentlyPlayed.orderBy('playedAt').reverse().limit(200).toArray(),
-      sonoraDb.transferHistory.orderBy('timestamp').reverse().limit(100).toArray(),
+      sonoraDb.recentlyPlayed.orderBy('playedAt').reverse().limit(200).toArray().catch(() => []),
+      sonoraDb.listeningEvents.orderBy('startedAt').reverse().limit(5000).toArray().catch(() => []),
+      sonoraDb.lyrics.toArray().catch(() => []),
+      sonoraDb.djMixes.orderBy('createdAt').reverse().toArray().catch(() => []),
+      sonoraDb.processedStems.orderBy('createdAt').reverse().toArray().catch(() => []),
+      sonoraDb.recommendationFeedback.toArray().catch(() => []),
+      sonoraDb.transferHistory.orderBy('timestamp').reverse().limit(100).toArray().catch(() => []),
     ]);
 
+    // Auto-purge expired soft-deleted tracks cleanly
+    const retentionDays = settings.deletedRetentionDays ?? 30;
+    const expiryCutoff = Date.now() - Math.max(1, retentionDays) * 86_400_000;
+    const expiredDeletedIds = rawTracks
+      .filter((t) => typeof t.deletedAt === 'number' && t.deletedAt > 0 && t.deletedAt < expiryCutoff)
+      .map((t) => t.id);
+    if (expiredDeletedIds.length > 0) {
+      for (const id of expiredDeletedIds) {
+        await removeTrackCompletely(id).catch(() => {});
+      }
+    }
+
+    const expiredSet = new Set(expiredDeletedIds);
+    const remainingTracks = rawTracks.filter((t) => !expiredSet.has(t.id));
+    const tracks = remainingTracks.filter((t) => !t.deletedAt);
+    const deletedTracks = remainingTracks
+      .filter((t) => !!t.deletedAt)
+      .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
+
+    await ensureStorageAllocations().catch(() => {});
+
     audioEngine.setNetworkMode(settings.networkMode);
+    audioEngine.setVisualizerActive(settings.visualizer?.enabled ?? true);
+    audioEngine.configureTransitions({
+      gaplessEnabled: settings.gaplessEnabled ?? true,
+      transitionMode: settings.transitionMode,
+      crossfadeEnabled: settings.crossfadeEnabled,
+      crossfadeSeconds: settings.crossfadeSeconds ?? DEFAULT_CROSSFADE_SECONDS,
+    });
+    if (settings.audioOutputDeviceId) {
+      void audioEngine.setAudioOutputDevice(settings.audioOutputDeviceId);
+    }
     audioEngine.applyEqualizerSettings(equalizer);
+    audioEngine.applySpatialAudioSettings({
+      ...DEFAULT_SPATIAL_AUDIO_SETTINGS,
+      ...(settings.spatialAudio || {}),
+    });
 
     set({
       isLoaded: true,
       settings,
       equalizer,
       tracks,
+      deletedTracks,
       playlists,
       playlistTracks,
+      smartPlaylists,
       favoriteIds: new Set(favorites.map((f) => f.trackId)),
       recentlyPlayed,
+      listeningEvents,
+      lyricsRecords,
+      djMixes,
+      processedStems,
+      recommendationFeedback,
       transferHistory,
     });
 
-    getStorageBreakdown()
-      .then((storageBreakdown) => set({ storageBreakdown }))
-      .catch(() => {});
+    getStorageEstimate()
+      .then(async (est) => {
+        if (est.persisted === false) {
+          const granted = await requestPersistentStorage();
+          if (granted && !settings.persistStorageRequested) {
+            const next = { ...settings, persistStorageRequested: true, updatedAt: Date.now() };
+            set({ settings: next });
+            await sonoraDb.settings.put(next).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        getStorageBreakdown()
+          .then((storageBreakdown) => set({ storageBreakdown }))
+          .catch(() => {});
+      });
   },
 
   refreshLibrary: async () => {
-    const [tracks, playlists, playlistTracks, favorites, recentlyPlayed, transferHistory] =
-      await Promise.all([
-        sonoraDb.tracks.toArray(),
-        sonoraDb.playlists.orderBy('createdAt').reverse().toArray(),
-        sonoraDb.playlistTracks.toArray(),
-        sonoraDb.favorites.toArray(),
-        sonoraDb.recentlyPlayed.orderBy('playedAt').reverse().limit(200).toArray(),
-        sonoraDb.transferHistory.orderBy('timestamp').reverse().limit(100).toArray(),
-      ]);
+    const [
+      rawTracks,
+      playlists,
+      playlistTracks,
+      smartPlaylists,
+      favorites,
+      recentlyPlayed,
+      listeningEvents,
+      lyricsRecords,
+      djMixes,
+      processedStems,
+      recommendationFeedback,
+      transferHistory,
+    ] = await Promise.all([
+      sonoraDb.tracks.toArray(),
+      sonoraDb.playlists.orderBy('createdAt').reverse().toArray(),
+      sonoraDb.playlistTracks.toArray(),
+      sonoraDb.smartPlaylists.orderBy('createdAt').reverse().toArray().catch(() => []),
+      sonoraDb.favorites.toArray(),
+      sonoraDb.recentlyPlayed.orderBy('playedAt').reverse().limit(200).toArray().catch(() => []),
+      sonoraDb.listeningEvents.orderBy('startedAt').reverse().limit(5000).toArray().catch(() => []),
+      sonoraDb.lyrics.toArray().catch(() => []),
+      sonoraDb.djMixes.orderBy('createdAt').reverse().toArray().catch(() => []),
+      sonoraDb.processedStems.orderBy('createdAt').reverse().toArray().catch(() => []),
+      sonoraDb.recommendationFeedback.toArray().catch(() => []),
+      sonoraDb.transferHistory.orderBy('timestamp').reverse().limit(100).toArray().catch(() => []),
+    ]);
+
+    const tracks = rawTracks.filter((t) => !t.deletedAt);
+    const deletedTracks = rawTracks
+      .filter((t) => !!t.deletedAt)
+      .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
 
     set({
       tracks,
+      deletedTracks,
       playlists,
       playlistTracks,
+      smartPlaylists,
       favoriteIds: new Set(favorites.map((f) => f.trackId)),
       recentlyPlayed,
+      listeningEvents,
+      lyricsRecords,
+      djMixes,
+      processedStems,
+      recommendationFeedback,
       transferHistory,
     });
   },
@@ -261,6 +476,199 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     await sonoraDb.settings.put(next);
   },
 
+  updateVisualizerSettings: async (patch) => {
+    const currentSettings = get().settings;
+    const nextVisualizer: VisualizerSettings = {
+      ...DEFAULT_VISUALIZER_SETTINGS,
+      ...(currentSettings.visualizer || {}),
+      ...patch,
+    };
+    const next = {
+      ...currentSettings,
+      visualizer: nextVisualizer,
+      updatedAt: Date.now(),
+    };
+    set({ settings: next });
+    audioEngine.setVisualizerActive(nextVisualizer.enabled);
+    await sonoraDb.settings.put(next);
+  },
+
+  updateSpatialAudioSettings: async (patch) => {
+    const currentSettings = get().settings;
+    const base: SpatialAudioSettings = {
+      ...DEFAULT_SPATIAL_AUDIO_SETTINGS,
+      ...(currentSettings.spatialAudio || {}),
+    };
+    const nextSpatial: SpatialAudioSettings = {
+      ...base,
+      ...patch,
+    };
+    const next = {
+      ...currentSettings,
+      spatialAudio: nextSpatial,
+      updatedAt: Date.now(),
+    };
+    set({ settings: next });
+    audioEngine.applySpatialAudioSettings(nextSpatial);
+    await sonoraDb.settings.put(next);
+  },
+
+  selectSpatialAudioMode: async (mode) => {
+    const currentSettings = get().settings;
+    const currentSpatial = {
+      ...DEFAULT_SPATIAL_AUDIO_SETTINGS,
+      ...(currentSettings.spatialAudio || {}),
+    };
+    const nextSpatial = getSpatialPresetSettings(mode, currentSpatial);
+    const next = {
+      ...currentSettings,
+      spatialAudio: nextSpatial,
+      updatedAt: Date.now(),
+    };
+    set({ settings: next });
+    audioEngine.applySpatialAudioSettings(nextSpatial);
+    await sonoraDb.settings.put(next);
+  },
+
+  saveCustomSpatialProfile: async (name, includeEq = true) => {
+    const currentSettings = get().settings;
+    const currentSpatial: SpatialAudioSettings = {
+      ...DEFAULT_SPATIAL_AUDIO_SETTINGS,
+      ...(currentSettings.spatialAudio || {}),
+    };
+    const profile = createCustomSpatialProfile({
+      name,
+      spatial: currentSpatial,
+      equalizer: get().equalizer,
+      includeEq,
+    });
+    const existing = currentSettings.customSpatialProfiles || [];
+    const next = {
+      ...currentSettings,
+      customSpatialProfiles: [profile, ...existing],
+      updatedAt: Date.now(),
+    };
+    set({ settings: next });
+    await sonoraDb.settings.put(next);
+    return profile;
+  },
+
+  applyCustomSpatialProfile: async (profileId) => {
+    const currentSettings = get().settings;
+    const target = (currentSettings.customSpatialProfiles || []).find((p) => p.id === profileId);
+    if (!target) return;
+
+    const nextSpatial = applyCustomSpatialProfileSettings(target);
+    const nextSettings: AppSettingsRecord = {
+      ...currentSettings,
+      spatialAudio: nextSpatial,
+      updatedAt: Date.now(),
+    };
+    set({ settings: nextSettings });
+    audioEngine.applySpatialAudioSettings(nextSpatial);
+    await sonoraDb.settings.put(nextSettings);
+
+    if (target.eqSnapshot) {
+      const nextEq: EqualizerSettingsRecord = {
+        ...get().equalizer,
+        enabled: target.eqSnapshot.enabled,
+        preset: 'custom',
+        bassGain: target.eqSnapshot.bassGain,
+        trebleGain: target.eqSnapshot.trebleGain,
+        bands: [...target.eqSnapshot.bands],
+        updatedAt: Date.now(),
+      };
+      set({ equalizer: nextEq });
+      audioEngine.applyEqualizerSettings(nextEq);
+      await sonoraDb.equalizerSettings.put(nextEq);
+    }
+  },
+
+  deleteCustomSpatialProfile: async (profileId) => {
+    const currentSettings = get().settings;
+    const next: AppSettingsRecord = {
+      ...currentSettings,
+      customSpatialProfiles: (currentSettings.customSpatialProfiles || []).filter(
+        (p) => p.id !== profileId
+      ),
+      updatedAt: Date.now(),
+    };
+    set({ settings: next });
+    await sonoraDb.settings.put(next);
+  },
+
+  saveCustomDjPreset: async (preset) => {
+    const currentSettings = get().settings;
+    const existing = currentSettings.customDjPresets || [];
+    const filtered = existing.filter((p) => p.id !== preset.id);
+    const next = {
+      ...currentSettings,
+      customDjPresets: [preset, ...filtered],
+      updatedAt: Date.now(),
+    };
+    set({ settings: next });
+    await sonoraDb.settings.put(next);
+  },
+
+  deleteCustomDjPreset: async (presetId) => {
+    const currentSettings = get().settings;
+    const next = {
+      ...currentSettings,
+      customDjPresets: (currentSettings.customDjPresets || []).filter((p) => p.id !== presetId),
+      updatedAt: Date.now(),
+    };
+    set({ settings: next });
+    await sonoraDb.settings.put(next);
+  },
+
+  updateAppSettings: async (patch) => {
+    const currentSettings = get().settings;
+    const resolved = resolveTransitionConfig({
+      transitionMode:
+        patch.transitionMode ??
+        (typeof patch.crossfadeEnabled === 'boolean'
+          ? patch.crossfadeEnabled
+            ? 'crossfade'
+            : 'gapless'
+          : currentSettings.transitionMode),
+      crossfadeEnabled:
+        typeof patch.crossfadeEnabled === 'boolean'
+          ? patch.crossfadeEnabled
+          : typeof patch.transitionMode !== 'undefined'
+            ? patch.transitionMode === 'crossfade'
+            : currentSettings.crossfadeEnabled,
+      crossfadeSeconds:
+        typeof patch.crossfadeSeconds === 'number'
+          ? patch.crossfadeSeconds
+          : currentSettings.crossfadeSeconds,
+      gaplessEnabled: patch.gaplessEnabled ?? currentSettings.gaplessEnabled,
+    });
+
+    const next: AppSettingsRecord = {
+      ...currentSettings,
+      ...patch,
+      gaplessEnabled: resolved.gaplessEnabled,
+      transitionMode: resolved.transitionMode,
+      crossfadeEnabled: resolved.crossfadeEnabled,
+      crossfadeSeconds: resolved.crossfadeSeconds,
+      updatedAt: Date.now(),
+    };
+    set({ settings: next });
+
+    if (
+      typeof patch.gaplessEnabled !== 'undefined' ||
+      typeof patch.transitionMode !== 'undefined' ||
+      typeof patch.crossfadeEnabled !== 'undefined' ||
+      typeof patch.crossfadeSeconds !== 'undefined'
+    ) {
+      audioEngine.configureTransitions(resolved);
+    }
+    if (typeof patch.audioOutputDeviceId === 'string') {
+      void audioEngine.setAudioOutputDevice(patch.audioOutputDeviceId);
+    }
+    await sonoraDb.settings.put(next);
+  },
+
   requestPersistStorage: async () => {
     const granted = await requestPersistentStorage();
     const next = { ...get().settings, persistStorageRequested: true, updatedAt: Date.now() };
@@ -284,23 +692,64 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   removeTrack: async (trackId) => {
-    const target = get().tracks.find((t) => t.id === trackId);
-    await removeTrackCompletely(trackId);
-    if (target?.artworkId) {
-      const stillUsed = get().tracks.some(
-        (t) => t.id !== trackId && t.artworkId === target.artworkId
-      );
-      if (!stillUsed) {
-        artworkCache.revoke(target.artworkId);
+    await softDeleteTracks([trackId]);
+    await get().refreshLibrary();
+  },
+
+  softRemoveTracks: async (trackIds) => {
+    const count = await softDeleteTracks(trackIds);
+    await get().refreshLibrary();
+    return count;
+  },
+
+  restoreDeletedTracks: async (trackIds) => {
+    const count = await restoreSoftDeletedTracks(trackIds);
+    await get().refreshLibrary();
+    return count;
+  },
+
+  permanentlyDeleteTracks: async (trackIds) => {
+    const allTracks = [...get().tracks, ...get().deletedTracks];
+    for (const trackId of trackIds) {
+      const target = allTracks.find((t) => t.id === trackId);
+      await removeTrackCompletely(trackId);
+      if (target?.artworkId) {
+        const stillUsed = allTracks.some(
+          (t) => !trackIds.includes(t.id) && t.artworkId === target.artworkId
+        );
+        if (!stillUsed) {
+          artworkCache.revoke(target.artworkId);
+        }
       }
     }
     await get().refreshLibrary();
     await get().refreshStorage();
   },
 
+  emptyTrash: async () => {
+    const deletedIds = get().deletedTracks.map((t) => t.id);
+    if (deletedIds.length === 0) return;
+    await get().permanentlyDeleteTracks(deletedIds);
+  },
+
   editTrackMetadata: async (trackId, updates) => {
     await updateTrackMetadata(trackId, updates);
+    artworkCache.revoke(get().tracks.find((t) => t.id === trackId)?.artworkId || '');
     await get().refreshLibrary();
+  },
+
+  bulkEditTracksMetadata: async (trackIds, patch) => {
+    const count = await bulkUpdateTracksMetadata(trackIds, patch);
+    await get().refreshLibrary();
+    return count;
+  },
+
+  undoTrackMetadata: async (trackId) => {
+    const ok = await undoTrackMetadataUpdate(trackId);
+    if (ok) {
+      await get().refreshLibrary();
+    }
+    return ok;
   },
 
   updateTrackDuration: (trackId, duration) => {
@@ -314,6 +763,97 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     await get().refreshLibrary();
     await get().refreshStorage();
     return moved;
+  },
+
+  createSmartPlaylist: async (input) => {
+    const now = Date.now();
+    const record: SmartPlaylistRecord = {
+      id: `smart_${crypto.randomUUID()}`,
+      name: input.name.trim() || 'Smart Playlist',
+      description: input.description.trim(),
+      matchMode: input.matchMode,
+      rules: input.rules,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await sonoraDb.smartPlaylists.put(record);
+    await get().refreshLibrary();
+    return record;
+  },
+
+  updateSmartPlaylist: async (id, patch) => {
+    await sonoraDb.smartPlaylists.update(id, { ...patch, updatedAt: Date.now() });
+    await get().refreshLibrary();
+  },
+
+  deleteSmartPlaylist: async (id) => {
+    await sonoraDb.smartPlaylists.delete(id);
+    await get().refreshLibrary();
+  },
+
+  saveDjMix: async (mixInput) => {
+    const record: DjMixRecord = {
+      id: mixInput.id || `djmix_${crypto.randomUUID()}`,
+      title: mixInput.title,
+      createdAt: mixInput.createdAt || Date.now(),
+      durationSec: mixInput.durationSec,
+      mimeType: mixInput.mimeType,
+      byteSize: mixInput.byteSize,
+      blob: mixInput.blob,
+    };
+    await sonoraDb.djMixes.put(record);
+    await get().refreshLibrary();
+    return record;
+  },
+
+  deleteDjMix: async (id) => {
+    await sonoraDb.djMixes.delete(id);
+    await get().refreshLibrary();
+  },
+
+  saveLyrics: async (record) => {
+    await sonoraDb.lyrics.put(record);
+    await get().refreshLibrary();
+  },
+
+  deleteLyrics: async (trackId) => {
+    await sonoraDb.lyrics.delete(trackId);
+    await get().refreshLibrary();
+  },
+
+  saveProcessedStem: async (stem) => {
+    await sonoraDb.processedStems.put(stem);
+    await get().refreshLibrary();
+  },
+
+  deleteProcessedStem: async (id) => {
+    await sonoraDb.processedStems.delete(id);
+    await get().refreshLibrary();
+  },
+
+  setRecommendationFeedback: async (trackId, feedback) => {
+    if (!feedback) {
+      await sonoraDb.recommendationFeedback.delete(trackId);
+    } else {
+      await sonoraDb.recommendationFeedback.put({
+        trackId,
+        feedback,
+        updatedAt: Date.now(),
+      });
+    }
+    await get().refreshLibrary();
+  },
+
+  clearAnalyticsData: async () => {
+    await sonoraDb.transaction(
+      'rw',
+      [sonoraDb.listeningEvents, sonoraDb.recentlyPlayed],
+      async () => {
+        await sonoraDb.listeningEvents.clear();
+        await sonoraDb.recentlyPlayed.clear();
+      }
+    );
+    await get().refreshLibrary();
   },
 
   setEqualizerEnabled: async (enabled) => {
@@ -521,17 +1061,28 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     activeImportCancelled = false;
     pausedRemainingFiles = [];
     let pausedByFullStorage = false;
+    let quotaExceededHit = false;
 
-    if (!get().settings.persistStorageRequested) {
-      requestPersistentStorage()
-        .then(async (granted) => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', handleBeforeUnload);
+    }
+
+    // Request persistent browser storage before committing new audio blobs
+    getStorageEstimate()
+      .then(async (est) => {
+        if (est.persisted === false || !get().settings.persistStorageRequested) {
+          const granted = await requestPersistentStorage();
           const next = { ...get().settings, persistStorageRequested: true, updatedAt: Date.now() };
           set({ settings: next });
-          await sonoraDb.settings.put(next);
+          await sonoraDb.settings.put(next).catch(() => {});
           if (granted) get().refreshStorage();
-        })
-        .catch(() => {});
-    }
+        }
+      })
+      .catch(() => {});
 
     set({
       importJob: {
@@ -581,25 +1132,30 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       });
     };
 
-    const BATCH_SIZE = 8;
+    const BATCH_SIZE = 4;
 
     try {
+      await openSonoraDatabase().catch(() => {});
       set((s) => ({ importJob: { ...s.importJob, status: 'importing' } }));
 
       for (let offset = 0; offset < rawFiles.length; offset += BATCH_SIZE) {
-        if (activeImportCancelled || pausedByFullStorage) break;
+        if (activeImportCancelled || pausedByFullStorage || quotaExceededHit) break;
 
-        // Pre-calculate available capacity using actual partition usage before processing the batch
-        const [allocations, sectionUsed] = await Promise.all([
+        // Pre-calculate available partition capacity and actual browser quota before processing batch
+        const [allocations, sectionUsed, browserEst] = await Promise.all([
           ensureStorageAllocations(),
           getSectionUsedBytes(),
+          getStorageEstimate(),
         ]);
         const s1Cap = allocations.find((a) => a.id === 'storage1')?.configuredCapacityBytes;
         const s2Cap = allocations.find((a) => a.id === 'storage2')?.configuredCapacityBytes;
+        let runningBrowserUsage = browserEst.usageBytes;
+        const browserQuota = browserEst.quotaBytes;
 
         const slice = rawFiles.slice(offset, offset + BATCH_SIZE);
         const stagedBatch: StagedTrackImport[] = [];
         const stagedSourceFiles: File[] = [];
+        const stagedFingerprints = new Set<string>();
 
         for (let sliceIdx = 0; sliceIdx < slice.length; sliceIdx++) {
           const file = slice[sliceIdx];
@@ -618,6 +1174,24 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
                 ...s.importJob,
                 processedFiles: s.importJob.processedFiles + 1,
                 unsupportedCount: s.importJob.unsupportedCount + 1,
+              },
+            }));
+            continue;
+          }
+
+          if (file.size <= 0) {
+            set((s) => ({
+              importJob: {
+                ...s.importJob,
+                processedFiles: s.importJob.processedFiles + 1,
+                failedCount: s.importJob.failedCount + 1,
+                errors: [
+                  ...s.importJob.errors.slice(-49),
+                  {
+                    fileName: file.name,
+                    reason: 'Audio file is empty (0 bytes) and cannot be stored.',
+                  },
+                ],
               },
             }));
             continue;
@@ -651,7 +1225,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             s2CapacityBytes: s2Cap,
           });
           if (preCheck.storageFull && stagedBatch.length === 0) {
-            // Confirm it's not an already-imported duplicate before pausing
             const analysis = await analyzeInWorker(file, mimeType);
             if (!analysis.ok || !analysis.fingerprint) {
               set((s) => ({
@@ -685,7 +1258,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               continue;
             }
 
-            // Confirmed new file and both Storage 1 (25 GB) and Storage 2 (25 GB) lack room: pause import cleanly
             pausedByFullStorage = true;
             const remaining = [file, ...slice.slice(sliceIdx + 1), ...rawFiles.slice(offset + BATCH_SIZE)];
             pausedRemainingFiles = remaining;
@@ -726,6 +1298,75 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             continue;
           }
 
+          // Deduplicate BEFORE reading full file bytes into memory
+          const existingDup =
+            stagedFingerprints.has(analysis.fingerprint) ||
+            Boolean(await sonoraDb.tracks.where('fingerprint').equals(analysis.fingerprint).first());
+          if (existingDup) {
+            set((s) => ({
+              importJob: {
+                ...s.importJob,
+                processedFiles: s.importJob.processedFiles + 1,
+                duplicateCount: s.importJob.duplicateCount + 1,
+              },
+            }));
+            continue;
+          }
+
+          // Enforce actual browser origin disk quota before buffering/committing new file
+          if (
+            browserQuota !== null &&
+            runningBrowserUsage !== null &&
+            runningBrowserUsage + file.size > browserQuota
+          ) {
+            quotaExceededHit = true;
+            set((s) => ({
+              importJob: {
+                ...s.importJob,
+                status: 'error',
+                quotaExceeded: true,
+                failedCount: s.importJob.failedCount + 1,
+                errors: [
+                  ...s.importJob.errors.slice(-49),
+                  {
+                    fileName: file.name,
+                    reason: `Browser storage quota reached (${formatBytes(runningBrowserUsage)} / ${formatBytes(browserQuota)}). Previously saved tracks remain intact.`,
+                  },
+                ],
+              },
+            }));
+            break;
+          }
+
+          let ownedAudioBlob: Blob;
+          try {
+            ownedAudioBlob = await materializeAudioBlob(file, mimeType || 'audio/mpeg');
+          } catch (readErr) {
+            set((s) => ({
+              importJob: {
+                ...s.importJob,
+                processedFiles: s.importJob.processedFiles + 1,
+                failedCount: s.importJob.failedCount + 1,
+                errors: [
+                  ...s.importJob.errors.slice(-49),
+                  {
+                    fileName: file.name,
+                    reason:
+                      readErr instanceof Error
+                        ? readErr.message
+                        : 'Could not read audio file into IndexedDB storage.',
+                  },
+                ],
+              },
+            }));
+            continue;
+          }
+
+          stagedFingerprints.add(analysis.fingerprint);
+          if (runningBrowserUsage !== null) {
+            runningBrowserUsage += ownedAudioBlob.size;
+          }
+
           const track: Track = {
             id: crypto.randomUUID(),
             fingerprint: analysis.fingerprint,
@@ -736,26 +1377,33 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             album: analysis.album || 'Unknown Album',
             albumArtist: analysis.albumArtist || analysis.artist || 'Unknown Artist',
             genre: analysis.genre || '',
+            composer: analysis.composer || '',
+            folderPath: analysis.folderPath || '',
             year: analysis.year ?? null,
             trackNumber: analysis.trackNumber ?? null,
             discNumber: analysis.discNumber ?? null,
             duration: analysis.duration || 0,
-            mimeType: mimeType || file.type || 'audio/mpeg',
+            mimeType: mimeType || ownedAudioBlob.type || 'audio/mpeg',
             format: analysis.format || getFileExtension(file.name).toUpperCase() || 'AUDIO',
             bitrate: analysis.bitrate ?? null,
             sampleRate: analysis.sampleRate ?? null,
-            fileSize: file.size,
+            bitDepth: analysis.bitDepth ?? null,
+            channelCount: analysis.channelCount ?? null,
+            fileSize: ownedAudioBlob.size,
             fileName: file.name,
             artworkId: analysis.artworkId ?? null,
             addedAt: Date.now(),
             playCount: 0,
+            skipCount: 0,
+            rating: null,
+            deletedAt: null,
             lastPlayedAt: null,
           };
 
           stagedSourceFiles.push(file);
           stagedBatch.push({
             track,
-            audioBlob: file,
+            audioBlob: ownedAudioBlob,
             artwork:
               analysis.artworkId && analysis.artworkBlob
                 ? {
@@ -821,27 +1469,73 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             }
           } catch (err) {
             const quotaErr = isQuotaExceededError(err);
-            set((s) => ({
-              importJob: {
-                ...s.importJob,
-                status: 'error',
-                processedFiles: s.importJob.processedFiles + stagedBatch.length,
-                failedCount: s.importJob.failedCount + stagedBatch.length,
-                quotaExceeded: quotaErr,
-                errors: [
-                  ...s.importJob.errors.slice(-49),
-                  {
-                    fileName: 'Batch write',
-                    reason: quotaErr
-                      ? 'Browser storage quota exceeded. Free space or remove unused tracks to continue.'
-                      : err instanceof Error
-                        ? err.message
-                        : 'Failed to store batch in IndexedDB.',
+            if (quotaErr) {
+              quotaExceededHit = true;
+              set((s) => ({
+                importJob: {
+                  ...s.importJob,
+                  status: 'error',
+                  processedFiles: s.importJob.processedFiles + stagedBatch.length,
+                  failedCount: s.importJob.failedCount + stagedBatch.length,
+                  quotaExceeded: true,
+                  errors: [
+                    ...s.importJob.errors.slice(-49),
+                    {
+                      fileName: 'Browser Quota',
+                      reason:
+                        'Browser storage quota exceeded. Free space or remove unused tracks to continue. Previously saved tracks remain intact.',
+                    },
+                  ],
+                },
+              }));
+              break;
+            }
+
+            // Isolate single-file write failures without losing healthy items in the batch
+            for (const singleItem of stagedBatch) {
+              try {
+                const singleRes = await saveTrackBatch([singleItem]);
+                set((s) => ({
+                  importJob: {
+                    ...s.importJob,
+                    processedFiles: s.importJob.processedFiles + 1,
+                    importedCount: s.importJob.importedCount + singleRes.savedIds.length,
+                    duplicateCount:
+                      s.importJob.duplicateCount + singleRes.duplicateFingerprints.length,
+                    storage1ImportedCount:
+                      s.importJob.storage1ImportedCount + singleRes.storage1SavedCount,
+                    storage2ImportedCount:
+                      s.importJob.storage2ImportedCount + singleRes.storage2SavedCount,
                   },
-                ],
-              },
-            }));
-            if (quotaErr) break;
+                }));
+              } catch (singleErr) {
+                const singleQuota = isQuotaExceededError(singleErr);
+                if (singleQuota) quotaExceededHit = true;
+                set((s) => ({
+                  importJob: {
+                    ...s.importJob,
+                    status: singleQuota ? 'error' : s.importJob.status,
+                    processedFiles: s.importJob.processedFiles + 1,
+                    failedCount: s.importJob.failedCount + 1,
+                    quotaExceeded: s.importJob.quotaExceeded || singleQuota,
+                    errors: [
+                      ...s.importJob.errors.slice(-49),
+                      {
+                        fileName: singleItem.track.fileName,
+                        reason: singleQuota
+                          ? 'Browser storage quota exceeded. Previously saved tracks remain intact.'
+                          : singleErr instanceof Error
+                            ? singleErr.message
+                            : 'Failed to store track in IndexedDB.',
+                      },
+                    ],
+                  },
+                }));
+                if (singleQuota) break;
+              }
+            }
+            await get().refreshLibrary();
+            await get().refreshStorage();
           }
         }
       }
@@ -853,13 +1547,16 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             ? 'cancelled'
             : pausedByFullStorage
               ? 'paused_storage_full'
-              : s.importJob.status === 'error'
+              : quotaExceededHit || s.importJob.status === 'error'
                 ? 'error'
                 : 'completed',
           currentFileName: '',
         },
       }));
     } finally {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+      }
       worker.terminate();
       await get().refreshLibrary();
       await get().refreshStorage();

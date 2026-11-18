@@ -1,28 +1,44 @@
 import React, { useMemo } from 'react';
 import {
+  Activity,
   AlertCircle,
+  AlignLeft,
+  Disc,
   Heart,
   ListMusic,
   Maximize2,
+  Orbit,
   Pause,
+  PictureInPicture2,
   Play,
   Repeat,
   Repeat1,
   Shuffle,
   SkipBack,
   SkipForward,
+  Sparkles,
   Volume2,
   VolumeX,
 } from 'lucide-react';
+import { DEFAULT_SPATIAL_AUDIO_SETTINGS } from '../../db/sonoraDb';
 import { useLibraryStore } from '../../store/useLibraryStore';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { formatDuration } from '../../utils/formatters';
+import { SPATIAL_MODE_DEFINITIONS } from '../../utils/spatialAudioPresets';
 import { ArtworkThumb } from '../library/ArtworkThumb';
 
 export const PlayerBar: React.FC = () => {
   const tracks = useLibraryStore((s) => s.tracks);
   const favoriteIds = useLibraryStore((s) => s.favoriteIds);
   const toggleFavorite = useLibraryStore((s) => s.toggleFavorite);
+  const setActiveView = useLibraryStore((s) => s.setActiveView);
+  const settings = useLibraryStore((s) => s.settings);
+  const spatialAudio = settings.spatialAudio ?? DEFAULT_SPATIAL_AUDIO_SETTINGS;
+  const spatialActive = spatialAudio.enabled && spatialAudio.mode !== 'stereo';
+  const spatialLabel =
+    SPATIAL_MODE_DEFINITIONS.find((m) => m.id === spatialAudio.mode)?.shortLabel ?? 'Spatial';
+  const crossfadeActive =
+    Boolean(settings.crossfadeEnabled) && (settings.crossfadeSeconds ?? 5) > 0;
 
   const currentTrackId = usePlayerStore((s) => s.currentTrackId);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -32,9 +48,12 @@ export const PlayerBar: React.FC = () => {
   const volume = usePlayerStore((s) => s.volume);
   const muted = usePlayerStore((s) => s.muted);
   const shuffle = usePlayerStore((s) => s.shuffle);
+  const smartShuffle = usePlayerStore((s) => s.smartShuffle);
   const repeat = usePlayerStore((s) => s.repeat);
   const error = usePlayerStore((s) => s.error);
+  const isCrossfading = usePlayerStore((s) => s.isCrossfading);
   const isQueueOpen = usePlayerStore((s) => s.isQueueOpen);
+  const isMiniPlayerOpen = usePlayerStore((s) => s.isMiniPlayerOpen);
 
   const togglePlayPause = usePlayerStore((s) => s.togglePlayPause);
   const playNext = usePlayerStore((s) => s.playNext);
@@ -43,9 +62,11 @@ export const PlayerBar: React.FC = () => {
   const setVolume = usePlayerStore((s) => s.setVolume);
   const toggleMute = usePlayerStore((s) => s.toggleMute);
   const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
+  const toggleSmartShuffle = usePlayerStore((s) => s.toggleSmartShuffle);
   const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
   const setQueueOpen = usePlayerStore((s) => s.setQueueOpen);
   const setExpandedOpen = usePlayerStore((s) => s.setExpandedOpen);
+  const setMiniPlayerOpen = usePlayerStore((s) => s.setMiniPlayerOpen);
 
   const currentTrack = useMemo(
     () => tracks.find((t) => t.id === currentTrackId) || null,
@@ -95,11 +116,24 @@ export const PlayerBar: React.FC = () => {
               </p>
               <p className="text-xs text-gray-400 truncate">
                 {currentTrack ? currentTrack.artist : 'Select a track from your library'}
+                {smartShuffle ? ' · Smart Shuffle' : ''}
               </p>
             </div>
           </button>
 
           <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={toggleSmartShuffle}
+              aria-label={smartShuffle ? 'Disable Smart Shuffle' : 'Enable Smart Shuffle'}
+              aria-pressed={smartShuffle}
+              title="Smart Shuffle (prioritizes unheard tracks matching your taste)"
+              className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl ${
+                smartShuffle ? 'text-red-400 bg-red-500/15' : 'text-gray-400'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
             {currentTrack && (
               <button
                 type="button"
@@ -168,6 +202,23 @@ export const PlayerBar: React.FC = () => {
               {currentTrack
                 ? `${currentTrack.artist} · ${currentTrack.album}`
                 : 'Choose a song or import local music'}
+              {spatialActive && (
+                <span className="text-red-300 font-medium"> · Spatial: {spatialLabel}</span>
+              )}
+              {smartShuffle && (
+                <span className="text-red-400 font-medium"> · Smart Shuffle Active</span>
+              )}
+              {isCrossfading ? (
+                <span className="text-amber-300 font-medium"> · Crossfading</span>
+              ) : (
+                crossfadeActive &&
+                repeat !== 'one' && (
+                  <span className="text-gray-300 font-medium">
+                    {' '}
+                    · Crossfade {settings.crossfadeSeconds ?? 5}s
+                  </span>
+                )
+              )}
             </p>
           </div>
           {currentTrack && (
@@ -187,14 +238,31 @@ export const PlayerBar: React.FC = () => {
         </div>
 
         <div className="flex flex-col items-center gap-1.5 w-full max-w-xl mx-auto">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={toggleSmartShuffle}
+              aria-label={smartShuffle ? 'Disable Smart Shuffle' : 'Enable Smart Shuffle'}
+              aria-pressed={smartShuffle}
+              title="Smart Shuffle: prioritizes unheard tracks matching your favorite genres & artists"
+              className={`min-h-[36px] min-w-[36px] px-2 flex items-center justify-center gap-1 rounded-lg text-[11px] font-medium transition-colors ${
+                smartShuffle
+                  ? 'text-red-300 bg-red-500/20'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 shrink-0" />
+              {smartShuffle && <span className="whitespace-nowrap">Smart</span>}
+            </button>
+
             <button
               type="button"
               onClick={toggleShuffle}
               aria-label={shuffle ? 'Disable shuffle' : 'Enable shuffle'}
-              aria-pressed={shuffle}
+              aria-pressed={shuffle && !smartShuffle}
+              title="Standard Shuffle"
               className={`min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg transition-colors ${
-                shuffle ? 'text-red-400 bg-red-500/15' : 'text-gray-400 hover:text-white'
+                shuffle && !smartShuffle ? 'text-red-400 bg-red-500/15' : 'text-gray-400 hover:text-white'
               }`}
             >
               <Shuffle className="w-4 h-4" />
@@ -205,6 +273,7 @@ export const PlayerBar: React.FC = () => {
               onClick={playPrevious}
               disabled={!currentTrack}
               aria-label="Previous track"
+              title="Previous track (Left Arrow)"
               className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-gray-200 hover:text-white disabled:opacity-30 transition-colors"
             >
               <SkipBack className="w-5 h-5 fill-current" />
@@ -215,6 +284,7 @@ export const PlayerBar: React.FC = () => {
               onClick={togglePlayPause}
               disabled={!currentTrack && tracks.length === 0}
               aria-label={isPlaying ? 'Pause' : 'Play'}
+              title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
               className="w-10 h-10 flex items-center justify-center rounded-full bg-red-600 text-white hover:bg-red-500 active:scale-95 disabled:opacity-40 transition-all shadow-md"
             >
               {isBuffering ? (
@@ -231,6 +301,7 @@ export const PlayerBar: React.FC = () => {
               onClick={() => playNext(true)}
               disabled={!currentTrack}
               aria-label="Next track"
+              title="Next track (Right Arrow)"
               className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-gray-200 hover:text-white disabled:opacity-30 transition-colors"
             >
               <SkipForward className="w-5 h-5 fill-current" />
@@ -302,9 +373,55 @@ export const PlayerBar: React.FC = () => {
 
           <button
             type="button"
+            onClick={() => setActiveView('lyrics')}
+            aria-label="Open Lyrics Viewer"
+            title="Lyrics Viewer"
+            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-gray-400 hover:text-red-400 hover:bg-white/5 transition-colors"
+          >
+            <AlignLeft className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveView('spatial')}
+            aria-label="Open Spatial Audio & Formats"
+            title={spatialActive ? `Spatial Audio (${spatialLabel})` : 'Spatial Audio & Formats'}
+            className={`min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg transition-colors ${
+              spatialActive
+                ? 'text-red-400 bg-red-500/15 hover:bg-red-500/25'
+                : 'text-gray-400 hover:text-red-400 hover:bg-white/5'
+            }`}
+          >
+            <Orbit className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveView('dj')}
+            aria-label="Open DJ Mixing Studio"
+            title="DJ Mixing Studio"
+            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-gray-400 hover:text-red-400 hover:bg-white/5 transition-colors"
+          >
+            <Disc className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => currentTrack && setExpandedOpen(true)}
+            disabled={!currentTrack}
+            aria-label="Open Visualizer and Now Playing"
+            title="Visualizer & Now Playing"
+            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-gray-400 hover:text-red-400 hover:bg-white/5 disabled:opacity-30 transition-colors"
+          >
+            <Activity className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
             onClick={() => setQueueOpen(!isQueueOpen)}
             aria-label="Toggle playback queue"
             aria-pressed={isQueueOpen}
+            title="Toggle playback queue (Q)"
             className={`min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg transition-colors ${
               isQueueOpen
                 ? 'text-red-400 bg-red-500/15'
@@ -312,6 +429,21 @@ export const PlayerBar: React.FC = () => {
             }`}
           >
             <ListMusic className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMiniPlayerOpen(!isMiniPlayerOpen)}
+            aria-label="Toggle Floating Mini Player"
+            aria-pressed={isMiniPlayerOpen}
+            title="Floating Mini Player"
+            className={`min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg transition-colors ${
+              isMiniPlayerOpen
+                ? 'text-red-400 bg-red-500/15'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <PictureInPicture2 className="w-4 h-4" />
           </button>
 
           <button

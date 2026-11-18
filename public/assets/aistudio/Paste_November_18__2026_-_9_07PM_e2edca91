@@ -1,0 +1,1223 @@
+# SONORA – Complete Master Development Prompt
+## Premium Music Player, DJ Studio & Intelligent Audio Platform
+
+Continue developing the existing SONORA application. Transform it into a complete, premium music platform with advanced audio processing, intelligent music management, immersive visuals and professional DJ capabilities.
+
+**Primary objective:** Implement all specified features in the existing project, test them, fix bugs and maintain an accurate development progress tracker.
+
+Do not rebuild the application from scratch.
+
+---
+
+# PART 1 – CORE PROJECT REQUIREMENTS
+
+## 1. Existing Project Protection
+
+Before development:
+
+- Inspect the complete project structure.
+- Understand the existing React, TypeScript and Vite architecture.
+- Inspect the audio engine and music import implementation.
+- Inspect IndexedDB/Dexie database schemas.
+- Inspect existing storage allocation logic.
+- Inspect current UI components and design tokens.
+- Identify existing bugs and incomplete features.
+
+Rules:
+
+- Preserve all existing functionality.
+- Preserve existing imported songs and metadata.
+- Never reset or delete the database during initialization.
+- Use safe database migrations.
+- Avoid unnecessary dependencies.
+- Maintain modular, reusable code.
+- Do not introduce fake functionality or nonfunctional controls.
+
+## 2. Design System
+
+Maintain the existing SONORA premium black-and-red identity.
+
+Design requirements:
+
+- Deep black backgrounds.
+- Dark charcoal surfaces.
+- Crimson and red accent lighting.
+- Premium typography.
+- Smooth animations.
+- Responsive layouts.
+- Accessible controls.
+- Consistent icons.
+- Elegant album artwork presentation.
+
+Support desktop, laptop, tablet and Android phone layouts.
+
+The application should open directly into the music player/library without unnecessary marketing pages or registration screens.
+
+---
+
+# PART 2 – PERMANENT MUSIC STORAGE
+
+## 3. IndexedDB Music Storage
+
+Use IndexedDB with Dexie.js.
+
+Store:
+
+- Actual audio Blob files.
+- Song metadata.
+- Album artwork.
+- Artists and albums.
+- Playlists.
+- Favorites.
+- Playback history.
+- Queue state.
+- Import records.
+- Storage allocation records.
+- Lyrics and timestamps.
+- DJ session data.
+- User preferences.
+
+Requirements:
+
+- Restore the library after refreshing.
+- Restore the library after closing and reopening the browser.
+- Keep storage independent between browsers.
+- Never store only temporary references to imported files.
+- Request persistent browser storage where supported.
+- Check browser storage quota and usage.
+- Handle quota errors safely.
+- Never silently delete user data.
+
+Each browser has its own library unless explicit synchronization or transfer is implemented.
+
+## 4. Smart Storage Manager
+
+Configure two logical storage sections:
+
+- Storage 1: 25 GB.
+- Storage 2: 25 GB.
+- Total configured target: 50 GB.
+
+Allocation rules:
+
+1. Import every song into Storage 1 first.
+2. When a complete song cannot fit in the remaining Storage 1 capacity, allocate that song to Storage 2.
+3. Subsequent songs continue into Storage 2.
+4. Never split an audio file between storage sections.
+5. Stop importing when both sections are full.
+6. Never automatically delete or overwrite existing songs.
+7. Show actual storage usage and available quota.
+
+These are logical allocation targets, not guaranteed physical storage capacities. Browser quota limitations must be displayed honestly.
+
+---
+
+# PART 3 – MUSIC IMPORT AND LIBRARY
+
+## 5. Music Import
+
+Support:
+
+- Individual file imports.
+- Folder imports.
+- Bulk imports.
+- 1,500+ song libraries.
+- Supported MP3, WAV, M4A, AAC, OGG and FLAC files.
+- Metadata extraction.
+- Album artwork extraction.
+- Duplicate detection.
+- Import progress.
+- Import cancellation.
+- Interrupted import recovery.
+- Error reporting.
+
+Never claim a format is supported unless the browser or application can actually decode it.
+
+## 6. Smart Music Library
+
+Organize music by:
+
+- All Songs.
+- Artists.
+- Albums.
+- Genres.
+- Folders.
+- Favorites.
+- Recently Played.
+- Recently Added.
+- Most Played.
+- Playlists.
+- DJ Mixes.
+
+Provide search, filters, sorting and efficient rendering for large libraries.
+
+---
+
+# PART 4 – ADVANCED MUSIC PLAYER
+
+## 7. Playback Engine
+
+Implement:
+
+- Play and pause.
+- Next and previous.
+- Seek and duration controls.
+- Volume adjustment.
+- Shuffle.
+- Repeat one.
+- Repeat all.
+- Sequential playback.
+- Playback queue.
+- Favorites.
+- Recently played.
+- Playlist management.
+- Queue editing.
+- Background playback.
+- Lock-screen media controls.
+- Notification controls.
+- Bluetooth/headphone controls.
+- Media Session API.
+
+Preserve playback state when navigating between application screens.
+
+## 8. Gapless Playback
+
+Implement seamless transitions between consecutive songs.
+
+Requirements:
+
+- Preload the next audio track.
+- Avoid unwanted silence between compatible tracks.
+- Avoid playback overlap unless crossfade is enabled.
+- Handle different audio formats.
+- Preserve queue order.
+- Support repeat and shuffle.
+- Handle buffering and decoding errors.
+- Provide a configurable crossfade duration.
+
+Test actual transitions between audio files. Do not mark gapless playback complete based only on a UI control.
+
+---
+
+# PART 5 – AUDIO VISUALIZER
+
+## 9. Real-Time Music Visualizer
+
+Use Web Audio API AnalyserNode to analyze actual audio.
+
+Provide:
+
+- Audio waveform.
+- Frequency bars.
+- Circular spectrum.
+- Particle visualizer.
+- Ambient visualizer.
+- 3D music visualizer.
+- Bass-reactive animations.
+- Treble-reactive animations.
+- Beat-reactive lighting.
+
+Add:
+
+- Animation intensity.
+- Visualizer selection.
+- Background intensity.
+- 3D effect toggle.
+- Album rotation toggle.
+- Performance mode.
+- Disable visual effects option.
+
+Visual effects must react to real audio data, not arbitrary decorative animations.
+
+## 10. Album Artwork Animations
+
+Implement:
+
+- 3D album artwork rotation.
+- Perspective effects.
+- Dynamic lighting.
+- Smooth transitions between songs.
+- Reactive glow.
+- Floating particles.
+- Animated background gradients.
+
+Ensure these effects do not interfere with playback or performance.
+
+---
+
+# PART 6 – DJ MIXING STUDIO
+
+## 11. Two-Deck DJ Console
+
+Create a dedicated DJ Studio.
+
+Deck A and Deck B must independently support:
+
+- Song selection.
+- Album artwork.
+- Play/pause.
+- Cue.
+- Stop.
+- Seek.
+- Track duration.
+- Volume.
+- Pitch.
+- BPM estimate.
+- Waveform.
+- Jog wheel.
+- Track information.
+
+Allow both decks to play simultaneously using songs from the existing music library.
+
+## 12. DJ Mixer
+
+Implement:
+
+- Crossfader.
+- Master volume.
+- Channel volume.
+- Three-band EQ.
+- Bass.
+- Mid.
+- Treble.
+- Gain.
+- Filter.
+- Balance.
+- Headphone cue monitoring where supported.
+
+Use Web Audio API GainNodes, BiquadFilterNodes and appropriate audio routing.
+
+## 13. DJ Effects
+
+Implement real-time:
+
+- Echo.
+- Reverb.
+- Delay.
+- Flanger.
+- Phaser.
+- Low-pass filter.
+- High-pass filter.
+- Bass boost.
+- Beat repeat.
+- Stutter.
+
+## 14. DJ Performance Tools
+
+Implement:
+
+- BPM estimation.
+- Beat detection where practical.
+- Beat grid.
+- Beat synchronization.
+- Manual BPM.
+- Pitch bend.
+- Hot cues.
+- Cue points.
+- Loop in/out.
+- 4/8/16-beat loops.
+- Scratch simulation.
+- Auto Mix.
+- Transition presets.
+
+Clearly label estimated BPM and key information.
+
+## 15. DJ Recording
+
+Allow users to:
+
+- Start recording.
+- Pause recording.
+- Stop recording.
+- Save DJ sessions.
+- Export supported audio formats.
+- Review recorded mixes.
+
+Use appropriate Web Audio recording capabilities. Obtain explicit permission for microphone capture if required.
+
+---
+
+# PART 7 – SPATIAL AUDIO
+
+## 16. Spatial Audio Engine
+
+Implement browser-based spatial audio using:
+
+- PannerNode.
+- StereoPannerNode.
+- ConvolverNode.
+- GainNode.
+- BiquadFilterNode.
+- AudioWorklet where appropriate.
+
+Provide:
+
+- Stereo.
+- Wide Stereo.
+- Virtual Surround.
+- 3D Spatial Audio.
+- Cinema Mode.
+- Concert Hall.
+- Studio Mode.
+- Headphone Spatial Mode.
+- Custom Spatial Mode.
+
+Add controls for:
+
+- Spatial width.
+- Depth.
+- Distance.
+- Reverb.
+- Bass.
+- Treble.
+- Surround intensity.
+
+## 17. Dolby Atmos Compatibility
+
+- Identify compatible audio formats and decoding capabilities.
+- Support genuine Dolby Atmos playback only through appropriate licensed and supported decoding technology.
+- Distinguish genuine Dolby Atmos content from simulated spatial audio.
+- Never label ordinary stereo audio as genuine Atmos.
+- Clearly communicate browser and hardware limitations.
+
+Integrate spatial effects into both DJ decks where supported.
+
+---
+
+# PART 8 – NEW INTELLIGENT FEATURES
+
+## 18. AI Music Recommendations
+
+Create an intelligent recommendation system.
+
+Features:
+
+- Recommend songs based on listening history.
+- Analyze favourite artists and genres.
+- Consider listening frequency.
+- Identify frequently skipped songs.
+- Suggest similar tracks.
+- Recommend songs based on mood and activity.
+- Generate personalized playlists.
+- Allow users to like or dislike recommendations.
+- Provide explanations for recommendations.
+
+Implementation:
+
+- Begin with a local recommendation engine using metadata and listening history.
+- Use genre, artist, album, playback frequency and user preferences.
+- Optionally integrate an AI service for advanced recommendations.
+- Make AI integration optional.
+- Do not upload personal music files without explicit consent.
+- Provide useful recommendations even when offline using locally available data.
+
+Dependencies:
+- Existing IndexedDB database.
+- Listening history.
+- Music metadata.
+- Optional AI API integration.
+
+Acceptance tests:
+1. Recommendations use actual listening history.
+2. Favourite artists influence recommendations.
+3. Skipped songs are handled appropriately.
+4. Recommendations remain useful offline.
+5. Users can refresh recommendations.
+6. Recommendations can generate playlists.
+7. Missing metadata does not crash the recommendation engine.
+
+## 19. Lyrics and Karaoke
+
+Implement:
+
+- Lyrics panel.
+- Synchronized lyrics.
+- Full-screen lyrics.
+- Karaoke-style highlighting.
+- Current-line highlighting.
+- Lyrics search.
+- Manual lyrics editing.
+- Timestamp editing.
+- Local lyrics storage.
+- Offline lyrics availability.
+
+Support common lyrics formats such as LRC.
+
+For online lyrics providers:
+- Use legitimate APIs or user-authorized sources.
+- Respect copyright and licensing.
+- Do not scrape unauthorized services.
+- Handle unavailable lyrics gracefully.
+
+Acceptance tests:
+1. Lyrics load for songs with available data.
+2. Timestamped lyrics synchronize with playback.
+3. Lyrics remain available offline after being saved.
+4. Users can edit and save local lyrics.
+5. Missing lyrics display an appropriate message.
+6. Lyrics timing remains correct after seeking.
+
+Dependencies:
+- Music metadata.
+- IndexedDB.
+- Lyrics parser.
+- Optional authorized lyrics API.
+
+## 20. Listening Analytics
+
+Build a listening analytics dashboard.
+
+Display:
+
+- Total listening time.
+- Daily listening time.
+- Weekly listening time.
+- Monthly listening time.
+- Most-played songs.
+- Favourite artists.
+- Favourite albums.
+- Most-played genres.
+- Recently played songs.
+- Listening streaks.
+- Top tracks by month.
+- Playback history.
+
+Track meaningful listening sessions without counting repeated playback events incorrectly.
+
+Provide:
+- Date filters.
+- Weekly and monthly charts.
+- Listening history.
+- Clear statistics option with confirmation.
+- Privacy settings.
+
+Acceptance tests:
+1. Listening time is recorded correctly.
+2. Paused time is not counted.
+3. Duplicate events are avoided.
+4. Daily and monthly summaries calculate correctly.
+5. Analytics persist after refresh.
+6. Users can inspect and clear history.
+
+Dependencies:
+- Playback engine.
+- IndexedDB.
+- Chart library if required.
+
+## 21. Voice Music Control
+
+Implement optional voice commands.
+
+Supported examples:
+
+- "Play music."
+- "Pause music."
+- "Next song."
+- "Previous song."
+- "Play my favourites."
+- "Play [song name]."
+- "Search [artist name]."
+- "Increase volume."
+- "Decrease volume."
+- "Shuffle songs."
+- "Turn on repeat."
+- "Open DJ Studio."
+
+Requirements:
+
+- Use browser speech recognition where supported.
+- Display microphone permission requests.
+- Show recognized commands before execution when appropriate.
+- Provide visual listening status.
+- Allow users to disable voice controls.
+- Include manual controls as an alternative.
+- Never continuously record audio without user consent.
+- Provide offline fallback commands only where a supported local speech engine exists.
+
+Acceptance tests:
+1. Supported commands trigger the correct actions.
+2. Microphone permission is handled safely.
+3. Unsupported browsers display a useful fallback.
+4. Voice control does not interrupt playback.
+5. Users can disable the feature.
+
+Dependencies:
+- SpeechRecognition/Web Speech API where supported.
+- Playback engine.
+- Search and playlist modules.
+
+## 22. Vocal Isolation
+
+Add optional vocal and instrumental separation.
+
+Features:
+- Vocal-only mode.
+- Instrumental-only mode.
+- Original audio mode.
+- Vocal intensity control where supported.
+- A/B comparison.
+
+Implementation:
+- Investigate a suitable local or licensed source-separation model.
+- Consider WebAssembly, WebGPU or a server-side inference option.
+- Do not promise real-time processing if device performance cannot support it.
+- Allow offline processing only when the selected model and hardware support it.
+- Preserve original audio files.
+- Save processed outputs separately.
+- Clearly communicate processing time and device requirements.
+
+Acceptance tests:
+1. Original audio remains unchanged.
+2. Vocal and instrumental outputs are distinguishable.
+3. Unsupported devices receive a clear limitation message.
+4. Processing failures do not damage the original file.
+5. Processed results can be saved and played.
+
+Dependencies:
+- Audio processing engine.
+- Optional AI/source-separation model.
+- WebAssembly/WebGPU or authorized backend.
+
+## 23. Music Metadata Editor
+
+Allow users to edit:
+
+- Song title.
+- Artist.
+- Album.
+- Album artist.
+- Genre.
+- Year.
+- Track number.
+- Disc number.
+- Composer.
+- Artwork.
+- Custom tags.
+
+Requirements:
+- Save edited metadata in IndexedDB.
+- Preserve original audio.
+- Support metadata export or audio-tag writing only when the format and browser capabilities permit it.
+- Display whether a change affects the library metadata or the original audio file.
+- Support bulk metadata editing.
+- Provide undo or recovery for accidental changes.
+
+Acceptance tests:
+1. Metadata changes persist after refresh.
+2. Search uses updated metadata.
+3. Sorting uses updated metadata.
+4. Original audio is not corrupted.
+5. Artwork changes persist.
+6. Bulk editing works safely.
+
+Dependencies:
+- IndexedDB.
+- Audio metadata parser/writer.
+- Artwork storage.
+
+## 24. Recently Deleted
+
+Add a Recently Deleted section.
+
+Requirements:
+- Soft-delete tracks rather than immediately removing audio Blobs.
+- Show deleted song title, artist and deletion date.
+- Restore individual songs.
+- Restore multiple selected songs.
+- Permanently delete with explicit confirmation.
+- Show storage space that can be recovered.
+- Apply a configurable retention period.
+- Never permanently delete files without clear user confirmation.
+
+Acceptance tests:
+1. Deleted songs disappear from the normal library.
+2. Audio Blobs remain available during the retention period.
+3. Restoring returns the track to its original library.
+4. Permanent deletion removes related data safely.
+5. Storage usage updates correctly.
+6. Refresh does not erase the Recently Deleted list.
+
+Dependencies:
+- IndexedDB.
+- Track and storage allocation schemas.
+
+## 25. Playlist Export
+
+Support exporting playlists.
+
+Provide:
+- M3U.
+- M3U8.
+- JSON playlist format.
+- Playlist metadata export.
+- Playlist import where supported.
+- Export selected playlists.
+- Export all playlists.
+
+Requirements:
+- Preserve track ordering.
+- Include useful metadata.
+- Handle missing files.
+- Clearly explain that playlist exports do not necessarily contain the actual audio files.
+- Support portable relative paths where possible.
+- Provide an optional full music backup separately.
+
+Acceptance tests:
+1. Playlist exports contain correct tracks.
+2. Track order is preserved.
+3. JSON data can be imported again.
+4. Missing files are reported.
+5. Export does not modify the original library.
+
+Dependencies:
+- Playlist database.
+- File export utilities.
+
+## 26. Mini Player
+
+Implement a compact mini player.
+
+Features:
+- Album artwork.
+- Song title.
+- Artist.
+- Play/pause.
+- Next/previous.
+- Seek bar.
+- Volume.
+- Expand to full player.
+
+Requirements:
+- Remain accessible while navigating other sections.
+- Maintain one shared playback state.
+- Avoid creating duplicate audio instances.
+- Support desktop and mobile layouts.
+- Provide a compact draggable desktop mode where practical.
+
+Acceptance tests:
+1. Mini player controls the same audio engine.
+2. Expanding restores the full player.
+3. Navigation does not interrupt music.
+4. No duplicate playback occurs.
+5. Responsive layout works.
+
+Dependencies:
+- Shared player state.
+- Existing audio engine.
+
+## 27. Smart Playlists
+
+Allow users to create rule-based playlists.
+
+Example rules:
+
+- Songs played more than 10 times.
+- Songs not played in the last 30 days.
+- Recently added songs.
+- Songs by a selected artist.
+- Songs within a selected genre.
+- Favourite songs.
+- Songs with a specific rating.
+- Songs from a selected year.
+
+Provide:
+- Multiple conditions.
+- AND/OR rule groups.
+- Dynamic playlist updates.
+- Manual playlist refresh.
+- Playlist naming and editing.
+
+Acceptance tests:
+1. Rules return the correct songs.
+2. Dynamic playlists update when library data changes.
+3. Multiple conditions work.
+4. Manual playlists remain unaffected.
+5. Smart playlist rules persist after refresh.
+
+Dependencies:
+- Music metadata.
+- Listening history.
+- Playlist database.
+
+## 28. Keyboard Shortcuts
+
+Implement configurable keyboard controls.
+
+Default shortcuts:
+
+- Space: Play/Pause.
+- Right Arrow: Seek forward.
+- Left Arrow: Seek backward.
+- Ctrl + Right: Next song.
+- Ctrl + Left: Previous song.
+- Up Arrow: Increase volume.
+- Down Arrow: Decrease volume.
+- M: Mute/unmute.
+- S: Shuffle.
+- R: Repeat.
+- F: Favorite current song.
+
+Requirements:
+- Display a keyboard shortcuts help panel.
+- Allow users to customize shortcuts.
+- Avoid triggering shortcuts while typing in text fields.
+- Handle browser-reserved shortcuts carefully.
+- Support desktop keyboards.
+- Provide equivalent touch controls on mobile.
+
+Acceptance tests:
+1. Each shortcut triggers the correct action.
+2. Shortcuts do not interfere with text input.
+3. Customized shortcuts persist.
+4. Conflicting shortcuts are detected.
+
+Dependencies:
+- Shared playback state.
+- Keyboard event management.
+
+## 29. Listening Room
+
+Create immersive listening environments.
+
+Provide visual environments such as:
+
+- Rain.
+- Night Drive.
+- Space.
+- Ocean.
+- Concert Hall.
+- Sunset.
+- Forest.
+- Minimal Dark Room.
+
+Requirements:
+- Music-reactive ambient lighting.
+- Subtle background animation.
+- Optional particle effects.
+- Optional spatial audio integration.
+- Background intensity control.
+- Disable visual effects option.
+- Save preferred environment.
+
+Important:
+- Visual environments are optional and must not interfere with audio.
+- Clearly distinguish visual ambience from actual environmental audio effects.
+- Respect reduced-motion preferences.
+
+Acceptance tests:
+1. Environments can be selected.
+2. Visual effects respond to playback where configured.
+3. Preferences persist.
+4. Disabling visuals stops unnecessary rendering.
+5. Mobile performance remains acceptable.
+
+Dependencies:
+- Visualizer engine.
+- Theme settings.
+- Optional spatial audio engine.
+
+## 30. Audio Device Selector
+
+Add an audio output device selection interface.
+
+Requirements:
+- Detect supported output devices.
+- Display available output device labels where permitted.
+- Allow users to select an output device when the browser supports setSinkId().
+- Handle permission requirements.
+- Provide a default output option.
+- Handle device disconnection.
+- Update available devices when hardware changes.
+- Provide clear fallback when device selection is unsupported.
+
+Do not claim that every mobile browser allows application-level audio device selection.
+
+Acceptance tests:
+1. Supported desktop browsers display available devices.
+2. Selecting an output device changes audio output.
+3. Unsupported browsers display a fallback.
+4. Device disconnection is handled.
+5. Playback continues or recovers appropriately.
+
+Dependencies:
+- MediaDevices API.
+- HTMLMediaElement.setSinkId() where supported.
+- Browser permission handling.
+
+---
+
+# PART 9 – ADVANCED AUDIO EXPERIENCE
+
+## 31. Equalizer
+
+Provide:
+
+- Bass.
+- Mid.
+- Treble.
+- Pop.
+- Rock.
+- Classical.
+- Custom presets.
+
+Save settings persistently.
+
+## 32. Audio Quality Manager
+
+Display:
+
+- Audio format.
+- Bitrate where available.
+- Sample rate.
+- Bit depth where available.
+- Channel count.
+- File size.
+- Duration.
+- File metadata.
+
+Do not invent technical audio properties that cannot be read from the source.
+
+## 33. Backup and Restore
+
+Provide:
+
+- Metadata-only backup.
+- Audio-file backup.
+- Full library backup.
+- Playlist backup.
+- DJ session backup.
+- Backup validation.
+- Restore preview.
+- Duplicate-safe restoration.
+
+Clearly distinguish metadata backups from backups containing actual audio files.
+
+---
+
+# PART 10 – PWA, OFFLINE AND BACKGROUND PLAYBACK
+
+## 34. Progressive Web App
+
+Implement:
+
+- Installable PWA.
+- Offline application shell.
+- Service worker.
+- Offline imported music playback.
+- Cache management.
+- Safe application updates.
+- Android compatibility.
+- Desktop compatibility.
+
+## 35. Background Playback
+
+Implement and test:
+
+- Screen-lock playback.
+- Background playback.
+- Media Session API.
+- Lock-screen controls.
+- Notification controls.
+- Bluetooth headphone controls.
+
+Test on real Android devices.
+
+A browser PWA may not guarantee reliable background playback on every device. Document limitations honestly and consider a native Android playback integration if required.
+
+---
+
+# PART 11 – SECURITY AND PRIVACY
+
+## 36. User Data Protection
+
+- Keep music files locally by default.
+- Do not upload personal music without permission.
+- Validate imported files.
+- Protect temporary transfer sessions.
+- Use secure pairing for Wi-Fi transfers.
+- Avoid exposing local storage through public endpoints.
+- Provide clear permission explanations.
+- Allow users to export and delete their own data.
+- Handle corrupted data safely.
+
+---
+
+# PART 12 – TECHNICAL ARCHITECTURE
+
+Use the existing architecture wherever possible.
+
+Recommended technologies:
+
+- React.
+- TypeScript.
+- Vite.
+- Tailwind CSS.
+- Zustand.
+- Dexie.js.
+- IndexedDB.
+- HTML Audio API.
+- Web Audio API.
+- AudioWorklet.
+- Media Session API.
+- Canvas/SVG/WebGL.
+- Service Workers.
+- Workbox.
+- Web Workers.
+- WebAssembly/WebGPU for optional audio processing.
+
+Use appropriate libraries for charts, lyrics parsing, metadata handling and audio processing only when justified.
+
+Do not introduce an AI API or cloud service without documenting its cost, privacy implications and configuration requirements.
+
+---
+
+# PART 13 – CENTRAL DEVELOPMENT PROGRESS TRACKER
+
+## 37. DEVELOPMENT_PROGRESS.md
+
+Create or update a central file named DEVELOPMENT_PROGRESS.md.
+
+Maintain the following sections:
+
+1. Project overview.
+2. Overall verified completion percentage.
+3. Phase-by-phase progress.
+4. Completed features.
+5. In-progress features.
+6. Pending features.
+7. Blocked features.
+8. Bugs discovered.
+9. Bugs fixed.
+10. Automated test results.
+11. Manual test results.
+12. Browser compatibility.
+13. Android compatibility.
+14. Database migration history.
+15. Known limitations.
+16. Next development tasks.
+
+Track every individual feature using this format:
+
+| Feature | Status | Implementation | Tests | Result | Remaining Work |
+|---|---|---|---|---|---|
+| IndexedDB persistence | Not Started | Pending | Pending | Pending | Pending |
+| AI recommendations | Not Started | Pending | Pending | Pending | Pending |
+| Lyrics and karaoke | Not Started | Pending | Pending | Pending | Pending |
+| Listening analytics | Not Started | Pending | Pending | Pending | Pending |
+| Voice music control | Not Started | Pending | Pending | Pending | Pending |
+| Vocal isolation | Not Started | Pending | Pending | Pending | Pending |
+| Metadata editor | Not Started | Pending | Pending | Pending | Pending |
+| Gapless playback | Not Started | Pending | Pending | Pending | Pending |
+| Recently Deleted | Not Started | Pending | Pending | Pending | Pending |
+| Playlist export | Not Started | Pending | Pending | Pending | Pending |
+| Mini player | Not Started | Pending | Pending | Pending | Pending |
+| Smart playlists | Not Started | Pending | Pending | Pending | Pending |
+| Keyboard shortcuts | Not Started | Pending | Pending | Pending | Pending |
+| Listening Room | Not Started | Pending | Pending | Pending | Pending |
+| Audio device selector | Not Started | Pending | Pending | Pending | Pending |
+
+Use these statuses consistently:
+
+- Not Started.
+- In Progress.
+- Completed.
+- Blocked.
+
+Only mark a feature Completed after its implementation and acceptance tests have passed.
+
+Calculate completion percentage using verified completed checklist items, not estimates.
+
+Update DEVELOPMENT_PROGRESS.md whenever a feature changes status.
+
+Also maintain a detailed CHANGELOG.md with meaningful changes.
+
+---
+
+# PART 14 – DEVELOPMENT EXECUTION ORDER
+
+## 38. Dependency-Based Development Phases
+
+Implement all features in the following order.
+
+**Phase 1 – Foundation and Data Safety**
+- Existing project audit.
+- Database validation.
+- IndexedDB persistence.
+- Safe migrations.
+- Storage manager.
+- Data protection.
+
+**Phase 2 – Music Library**
+- Import system.
+- Metadata extraction.
+- Metadata editor.
+- Duplicate detection.
+- Recently Deleted.
+- Playlist export.
+
+**Phase 3 – Core Playback**
+- Audio engine.
+- Queue.
+- Gapless playback.
+- Crossfade.
+- Mini player.
+- Keyboard shortcuts.
+- Background playback.
+
+**Phase 4 – Audio Visual Experience**
+- Visualizer.
+- 3D animation.
+- Listening Room.
+- Equalizer.
+- Spatial audio.
+- Dolby Atmos compatibility.
+
+**Phase 5 – DJ Studio**
+- Two decks.
+- Mixer.
+- Crossfader.
+- EQ.
+- Effects.
+- BPM estimation.
+- Beat matching.
+- Recording.
+
+**Phase 6 – Intelligent Music Features**
+- AI recommendations.
+- Smart playlists.
+- Listening analytics.
+- Lyrics and karaoke.
+- Voice music control.
+- Vocal isolation.
+
+**Phase 7 – PWA and Device Integration**
+- Offline support.
+- Audio device selector.
+- Android testing.
+- Desktop testing.
+- Wi-Fi transfer.
+- Backup and restore.
+
+**Phase 8 – Quality Assurance and Release**
+- Full integration testing.
+- Performance optimization.
+- Security checks.
+- Browser compatibility.
+- Real-device testing.
+- Production deployment.
+- Documentation.
+
+Do not skip dependencies. For example, recommendations require useful music metadata and listening history.
+
+---
+
+# PART 15 – FINAL ACCEPTANCE TESTS
+
+## 39. Full Application Testing
+
+Test the complete application:
+
+1. Import 1,500+ songs.
+2. Verify permanent storage.
+3. Refresh the browser.
+4. Close and reopen the browser.
+5. Test Edge and Chrome independently.
+6. Test automatic Storage 1 to Storage 2 overflow.
+7. Test full-storage handling.
+8. Test duplicate detection.
+9. Test import recovery.
+10. Test playlists.
+11. Test smart playlists.
+12. Test metadata editing.
+13. Test recently deleted and restoration.
+14. Test playlist export and import.
+15. Test gapless playback.
+16. Test the mini player.
+17. Test keyboard shortcuts.
+18. Test lyrics synchronization.
+19. Test analytics.
+20. Test voice controls.
+21. Test AI recommendations.
+22. Test vocal isolation.
+23. Test audio visualizers.
+24. Test Listening Room.
+25. Test spatial audio.
+26. Test supported Dolby Atmos playback paths.
+27. Test two-deck DJ mixing.
+28. Test crossfader and EQ.
+29. Test DJ effects.
+30. Test BPM estimation and beat synchronization.
+31. Test DJ session recording.
+32. Test offline playback.
+33. Test Android background playback.
+34. Test lock-screen controls.
+35. Test Bluetooth controls.
+36. Test audio device selection.
+37. Test backup and restore.
+38. Check console errors.
+39. Check storage corruption and quota failures.
+40. Test responsive desktop and mobile interfaces.
+
+Record actual test outcomes in DEVELOPMENT_PROGRESS.md.
+
+---
+
+# PART 16 – FINAL DELIVERY
+
+## 40. Completion Report
+
+When development is finished, provide:
+
+- Overall verified completion percentage.
+- Completed feature list.
+- Remaining features.
+- Blocked features.
+- Files created.
+- Files modified.
+- Database changes.
+- Migration details.
+- Automated test results.
+- Manual test results.
+- Browser compatibility results.
+- Android compatibility results.
+- Performance findings.
+- Known limitations.
+- Deployment status.
+
+Provide the final updated DEVELOPMENT_PROGRESS.md and CHANGELOG.md.
+
+## FINAL REQUIREMENT
+
+Deliver a complete, reliable and responsive SONORA music platform.
+
+It must combine:
+
+- Permanent local music storage.
+- Smart music library.
+- Advanced playback.
+- Gapless transitions.
+- Dynamic visualizers.
+- Immersive Listening Room.
+- DJ Mixing Studio.
+- Spatial audio.
+- Genuine Dolby Atmos compatibility where licensed and supported.
+- AI recommendations.
+- Lyrics and karaoke.
+- Listening analytics.
+- Voice controls.
+- Vocal isolation.
+- Metadata editing.
+- Smart playlists.
+- Playlist export.
+- Recently Deleted.
+- Mini player.
+- Keyboard shortcuts.
+- Audio device selection.
+- Offline playback.
+- Backup and restore.
+
+Do not report features as completed merely because their buttons or interfaces exist.
+
+Do not claim 100% completion until all required acceptance tests have passed.
+
+Continue implementing the entire application, update the progress tracker throughout development, and clearly report any feature that is blocked by browser limitations, hardware requirements, external licensing or unavailable services.

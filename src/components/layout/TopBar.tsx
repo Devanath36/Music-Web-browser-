@@ -1,9 +1,14 @@
 import React from 'react';
-import { Radio, Search, WifiOff, X } from 'lucide-react';
+import { Keyboard, Mic, Radio, Search, WifiOff, X } from 'lucide-react';
 import { useLibraryStore } from '../../store/useLibraryStore';
 import { PWAInstallButton } from '../pwa/PWAInstallButton';
 
-export const TopBar: React.FC = () => {
+interface TopBarProps {
+  onOpenVoice?: () => void;
+  onOpenShortcuts?: () => void;
+}
+
+export const TopBar: React.FC<TopBarProps> = ({ onOpenVoice, onOpenShortcuts }) => {
   const searchQuery = useLibraryStore((s) => s.searchQuery);
   const setSearchQuery = useLibraryStore((s) => s.setSearchQuery);
   const networkMode = useLibraryStore((s) => s.settings.networkMode);
@@ -15,10 +20,12 @@ export const TopBar: React.FC = () => {
     activeView === 'songs' ||
     activeView === 'favorites' ||
     activeView === 'albums' ||
-    activeView === 'artists';
+    activeView === 'artists' ||
+    activeView === 'genres' ||
+    activeView === 'folders';
 
   return (
-    <header className="flex items-center justify-between gap-3 sm:gap-6 px-4 sm:px-6 h-16 border-b border-white/[0.07] bg-[#050507]/90 backdrop-blur-md shrink-0">
+    <header className="flex items-center justify-between gap-3 sm:gap-5 px-4 sm:px-6 h-16 border-b border-white/[0.07] bg-[#050507]/90 backdrop-blur-md shrink-0">
       <div className="flex md:hidden items-center gap-2 shrink-0">
         <img src="/icon.svg" alt="" className="w-6 h-6 rounded" />
         <span className="font-display text-base font-bold tracking-tight text-white">SONORA</span>
@@ -53,7 +60,31 @@ export const TopBar: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex items-center gap-2.5 shrink-0">
+      <div className="flex items-center gap-2 shrink-0">
+        {onOpenVoice && (
+          <button
+            type="button"
+            onClick={onOpenVoice}
+            aria-label="Open Voice Music Control"
+            title="Voice Music Control"
+            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl border border-white/10 bg-[#111216] text-gray-300 hover:text-red-400 hover:border-red-500/40 transition-colors"
+          >
+            <Mic className="w-4 h-4" />
+          </button>
+        )}
+
+        {onOpenShortcuts && (
+          <button
+            type="button"
+            onClick={onOpenShortcuts}
+            aria-label="Keyboard Shortcuts"
+            title="Keyboard Shortcuts"
+            className="hidden sm:flex min-h-[38px] min-w-[38px] items-center justify-center rounded-xl border border-white/10 bg-[#111216] text-gray-300 hover:text-red-400 hover:border-red-500/40 transition-colors"
+          >
+            <Keyboard className="w-4 h-4" />
+          </button>
+        )}
+
         <div
           role="group"
           aria-label="Playback network mode"

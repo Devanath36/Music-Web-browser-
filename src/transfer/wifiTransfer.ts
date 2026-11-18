@@ -630,7 +630,7 @@ export class WifiTransferClient {
         playCount: 0,
         lastPlayedAt: null,
       },
-      audioBlob: file,
+      audioBlob: receivedBlob,
       artwork:
         analysis.artworkId && analysis.artworkBlob
           ? {

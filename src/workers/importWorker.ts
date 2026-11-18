@@ -17,6 +17,8 @@ export interface WorkerAnalyzeResult {
   album?: string;
   albumArtist?: string;
   genre?: string;
+  composer?: string;
+  folderPath?: string;
   year?: number | null;
   trackNumber?: number | null;
   discNumber?: number | null;
@@ -24,6 +26,8 @@ export interface WorkerAnalyzeResult {
   format?: string;
   bitrate?: number | null;
   sampleRate?: number | null;
+  bitDepth?: number | null;
+  channelCount?: number | null;
   artworkId?: string | null;
   artworkBlob?: Blob | null;
   artworkMimeType?: string | null;
@@ -85,6 +89,10 @@ self.onmessage = async (event: MessageEvent<WorkerAnalyzeRequest>) => {
     let album = 'Unknown Album';
     let albumArtist = '';
     let genre = '';
+    let composer = '';
+    const relPath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || '';
+    const lastSlash = relPath.lastIndexOf('/');
+    const folderPath = lastSlash > 0 ? relPath.slice(0, lastSlash) : 'Device Import';
     let year: number | null = null;
     let trackNumber: number | null = fallback.trackNumber;
     let discNumber: number | null = null;
@@ -92,6 +100,8 @@ self.onmessage = async (event: MessageEvent<WorkerAnalyzeRequest>) => {
     let format = ext;
     let bitrate: number | null = null;
     let sampleRate: number | null = null;
+    let bitDepth: number | null = null;
+    let channelCount: number | null = null;
     let artworkId: string | null = null;
     let artworkBlob: Blob | null = null;
     let artworkMimeType: string | null = null;
@@ -106,6 +116,7 @@ self.onmessage = async (event: MessageEvent<WorkerAnalyzeRequest>) => {
       if (common.albumartist?.trim()) albumArtist = common.albumartist.trim();
       else if (artist && artist !== 'Unknown Artist') albumArtist = artist;
       if (common.genre?.[0]?.trim()) genre = common.genre[0].trim();
+      if (common.composer?.[0]?.trim()) composer = common.composer[0].trim();
       if (typeof common.year === 'number' && common.year > 0) year = common.year;
       if (typeof common.track?.no === 'number' && common.track.no > 0) {
         trackNumber = common.track.no;
@@ -127,6 +138,12 @@ self.onmessage = async (event: MessageEvent<WorkerAnalyzeRequest>) => {
       }
       if (typeof fmt.sampleRate === 'number' && Number.isFinite(fmt.sampleRate)) {
         sampleRate = fmt.sampleRate;
+      }
+      if (typeof fmt.bitsPerSample === 'number' && Number.isFinite(fmt.bitsPerSample)) {
+        bitDepth = fmt.bitsPerSample;
+      }
+      if (typeof fmt.numberOfChannels === 'number' && Number.isFinite(fmt.numberOfChannels)) {
+        channelCount = fmt.numberOfChannels;
       }
 
       const picture = common.picture?.[0];
@@ -152,6 +169,8 @@ self.onmessage = async (event: MessageEvent<WorkerAnalyzeRequest>) => {
       album,
       albumArtist: albumArtist || artist,
       genre,
+      composer,
+      folderPath,
       year,
       trackNumber,
       discNumber,
@@ -159,6 +178,8 @@ self.onmessage = async (event: MessageEvent<WorkerAnalyzeRequest>) => {
       format: format || mimeType || ext,
       bitrate,
       sampleRate,
+      bitDepth,
+      channelCount,
       artworkId,
       artworkBlob,
       artworkMimeType,

@@ -3,26 +3,36 @@ import type {
   AppSettingsRecord,
   ArtworkRecord,
   AudioBlobRecord,
+  DjMixRecord,
   EqualizerSettingsRecord,
   FavoriteEntry,
+  ListeningEventRecord,
+  ListeningRoomSettings,
   PlaybackStateRecord,
   Playlist,
   PlaylistTrack,
+  ProcessedStemRecord,
   RecentlyPlayedEntry,
+  RecommendationFeedbackRecord,
+  SmartPlaylistRecord,
   StorageAllocationRecord,
   StorageBreakdown,
   StorageSectionId,
   Track,
+  TrackLyricsRecord,
   TransferHistoryRecord,
+  VisualizerSettings,
 } from '../types/music';
 import { getStorageEstimate } from '../utils/storage';
+import { DEFAULT_CROSSFADE_SECONDS } from '../utils/crossfadeEngine';
+import { DEFAULT_SPATIAL_AUDIO_SETTINGS } from '../utils/spatialAudioPresets';
 import {
   SECTION_CAPACITY_BYTES,
   TOTAL_CONFIGURED_CAPACITY_BYTES,
   allocateSequentialStorageSection,
 } from '../utils/storageMetrics';
 
-export { SECTION_CAPACITY_BYTES, TOTAL_CONFIGURED_CAPACITY_BYTES };
+export { SECTION_CAPACITY_BYTES, TOTAL_CONFIGURED_CAPACITY_BYTES, DEFAULT_SPATIAL_AUDIO_SETTINGS };
 
 export class SonoraDatabase extends Dexie {
   tracks!: Table<Track, string>;
@@ -37,9 +47,15 @@ export class SonoraDatabase extends Dexie {
   transferHistory!: Table<TransferHistoryRecord, number>;
   equalizerSettings!: Table<EqualizerSettingsRecord, string>;
   settings!: Table<AppSettingsRecord, string>;
+  lyrics!: Table<TrackLyricsRecord, string>;
+  listeningEvents!: Table<ListeningEventRecord, number>;
+  smartPlaylists!: Table<SmartPlaylistRecord, string>;
+  djMixes!: Table<DjMixRecord, string>;
+  processedStems!: Table<ProcessedStemRecord, string>;
+  recommendationFeedback!: Table<RecommendationFeedbackRecord, string>;
 
   constructor() {
-    super('SonoraMusicDB');
+    super('SonoraMusicDB', { chromeTransactionDurability: 'strict' });
 
     // Version 1: Initial schema
     this.version(1).stores({
@@ -104,10 +120,59 @@ export class SonoraDatabase extends Dexie {
           });
         }
       });
+
+    // Version 3: Smart Library fields (genre, folderPath, deletedAt), Lyrics & Karaoke, Listening Analytics,
+    // Smart Playlists, Persisted DJ Mixes, Vocal Isolation Stems, and Recommendation Feedback.
+    // Non-destructive upgrade: keeps every existing song, blob, artwork, playlist, favorite, and EQ preset intact.
+    this.version(3)
+      .stores({
+        tracks:
+          'id, &fingerprint, storageSection, title, artist, album, albumArtist, genre, folderPath, deletedAt, addedAt, lastPlayedAt, sourceType, artworkId',
+        audioBlobs: 'trackId, storageSection',
+        artworks: 'id',
+        playlists: 'id, name, createdAt, updatedAt',
+        playlistTracks: '++id, playlistId, trackId, [playlistId+position]',
+        favorites: 'trackId, addedAt',
+        recentlyPlayed: '++id, trackId, playedAt',
+        playbackState: 'id',
+        storageAllocation: 'id, priority',
+        transferHistory: '++id, sessionId, direction, status, timestamp',
+        equalizerSettings: 'id',
+        settings: 'id',
+        lyrics: 'trackId, updatedAt',
+        listeningEvents: '++id, trackId, startedAt, dayKey, monthKey',
+        smartPlaylists: 'id, name, updatedAt',
+        djMixes: 'id, createdAt',
+        processedStems: 'id, trackId, mode, createdAt',
+        recommendationFeedback: 'trackId, feedback, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table('tracks')
+          .toCollection()
+          .modify((track: Partial<Track>) => {
+            if (typeof track.deletedAt === 'undefined') {
+              track.deletedAt = null;
+            }
+            if (typeof track.skipCount === 'undefined') {
+              track.skipCount = 0;
+            }
+          });
+      });
+
+    this.on('blocked', () => {
+      // Multi-tab version upgrade safeguard; never deletes existing IndexedDB data
+    });
   }
 }
 
 export const sonoraDb = new SonoraDatabase();
+
+export async function openSonoraDatabase(): Promise<void> {
+  if (!sonoraDb.isOpen()) {
+    await sonoraDb.open();
+  }
+}
 
 export const DEFAULT_PLAYBACK_STATE: PlaybackStateRecord = {
   id: 'current',
@@ -116,10 +181,29 @@ export const DEFAULT_PLAYBACK_STATE: PlaybackStateRecord = {
   queueTrackIds: [],
   queueIndex: -1,
   shuffle: false,
+  smartShuffle: false,
   repeat: 'off',
   volume: 0.9,
   muted: false,
   updatedAt: Date.now(),
+};
+
+export const DEFAULT_VISUALIZER_SETTINGS: VisualizerSettings = {
+  enabled: true,
+  style: 'circular',
+  animationIntensity: 1,
+  backgroundIntensity: 0.7,
+  threeDEnabled: true,
+  albumRotationEnabled: true,
+  performanceMode: false,
+};
+
+export const DEFAULT_LISTENING_ROOM_SETTINGS: ListeningRoomSettings = {
+  environment: 'minimal',
+  visualEffectsEnabled: true,
+  particlesEnabled: true,
+  backgroundIntensity: 0.75,
+  syncSpatialPreset: false,
 };
 
 export const DEFAULT_APP_SETTINGS: AppSettingsRecord = {
@@ -129,6 +213,17 @@ export const DEFAULT_APP_SETTINGS: AppSettingsRecord = {
   persistStorageRequested: false,
   sortBy: 'addedAt',
   sortDir: 'desc',
+  gaplessEnabled: true,
+  transitionMode: 'gapless',
+  crossfadeEnabled: false,
+  crossfadeSeconds: DEFAULT_CROSSFADE_SECONDS,
+  deletedRetentionDays: 30,
+  analyticsEnabled: true,
+  voiceControlEnabled: false,
+  listeningRoom: DEFAULT_LISTENING_ROOM_SETTINGS,
+  visualizer: DEFAULT_VISUALIZER_SETTINGS,
+  spatialAudio: DEFAULT_SPATIAL_AUDIO_SETTINGS,
+  customSpatialProfiles: [],
   updatedAt: Date.now(),
 };
 
@@ -170,11 +265,46 @@ export async function ensureStorageAllocations(): Promise<StorageAllocationRecor
 export async function getOrInitSettings(): Promise<AppSettingsRecord> {
   const existing = await sonoraDb.settings.get('app');
   if (existing) {
-    if (!existing.playbackRestorePolicy) {
+    if (
+      !existing.playbackRestorePolicy ||
+      !existing.visualizer ||
+      !existing.spatialAudio ||
+      !existing.listeningRoom ||
+      typeof existing.gaplessEnabled === 'undefined' ||
+      typeof existing.crossfadeEnabled === 'undefined' ||
+      !existing.transitionMode ||
+      !Array.isArray(existing.customSpatialProfiles)
+    ) {
+      const hasLegacyCrossfade =
+        typeof existing.crossfadeSeconds === 'number' && existing.crossfadeSeconds > 0;
+      const migratedCrossfadeEnabled = existing.crossfadeEnabled ?? hasLegacyCrossfade;
       const migrated: AppSettingsRecord = {
         ...DEFAULT_APP_SETTINGS,
         ...existing,
-        playbackRestorePolicy: 'ask_user',
+        playbackRestorePolicy: existing.playbackRestorePolicy || 'ask_user',
+        gaplessEnabled: existing.gaplessEnabled ?? true,
+        crossfadeEnabled: migratedCrossfadeEnabled,
+        transitionMode: existing.transitionMode || (migratedCrossfadeEnabled ? 'crossfade' : 'gapless'),
+        crossfadeSeconds: hasLegacyCrossfade
+          ? Math.min(20, Math.max(0, existing.crossfadeSeconds!))
+          : DEFAULT_CROSSFADE_SECONDS,
+        deletedRetentionDays: existing.deletedRetentionDays ?? 30,
+        analyticsEnabled: existing.analyticsEnabled ?? true,
+        customSpatialProfiles: Array.isArray(existing.customSpatialProfiles)
+          ? existing.customSpatialProfiles
+          : [],
+        listeningRoom: {
+          ...DEFAULT_LISTENING_ROOM_SETTINGS,
+          ...(existing.listeningRoom || {}),
+        },
+        visualizer: {
+          ...DEFAULT_VISUALIZER_SETTINGS,
+          ...(existing.visualizer || {}),
+        },
+        spatialAudio: {
+          ...DEFAULT_SPATIAL_AUDIO_SETTINGS,
+          ...(existing.spatialAudio || {}),
+        },
       };
       await sonoraDb.settings.put(migrated);
       return migrated;
@@ -297,13 +427,46 @@ export async function saveTrackBatch(items: StagedTrackImport[]): Promise<SaveTr
     };
   }
 
+  // Ensure all audioBlobs are standalone Blobs BEFORE opening the IndexedDB transaction
+  // so no non-IDB async File read occurs inside an active transaction.
+  const preparedItems: StagedTrackImport[] = [];
+  for (const item of items) {
+    if (!item.audioBlob || item.audioBlob.size <= 0) continue;
+    const ownedBlob =
+      item.audioBlob instanceof File
+        ? new Blob([await item.audioBlob.arrayBuffer()], {
+            type: item.audioBlob.type || item.track.mimeType || 'audio/mpeg',
+          })
+        : item.audioBlob;
+    preparedItems.push({
+      ...item,
+      audioBlob: ownedBlob,
+      track: {
+        ...item.track,
+        fileSize: ownedBlob.size,
+      },
+    });
+  }
+
+  if (preparedItems.length === 0) {
+    return {
+      savedIds: [],
+      savedSections: {},
+      storage1SavedCount: 0,
+      storage2SavedCount: 0,
+      duplicateFingerprints: [],
+      storageFull: false,
+      rejectedStartIndex: 0,
+    };
+  }
+
   const savedIds: string[] = [];
   const savedSections: Record<string, StorageSectionId> = {};
   let storage1SavedCount = 0;
   let storage2SavedCount = 0;
   const duplicateFingerprints: string[] = [];
   let storageFull = false;
-  let rejectedStartIndex = items.length;
+  let rejectedStartIndex = preparedItems.length;
 
   const allocations = await ensureStorageAllocations();
   const s1Cap =
@@ -317,7 +480,7 @@ export async function saveTrackBatch(items: StagedTrackImport[]): Promise<SaveTr
     'rw',
     [sonoraDb.tracks, sonoraDb.audioBlobs, sonoraDb.artworks],
     async () => {
-      const fingerprints = items.map((i) => i.track.fingerprint);
+      const fingerprints = preparedItems.map((i) => i.track.fingerprint);
       const existingTracks = await sonoraDb.tracks
         .where('fingerprint')
         .anyOf(fingerprints)
@@ -338,8 +501,8 @@ export async function saveTrackBatch(items: StagedTrackImport[]): Promise<SaveTr
       const tracksToPut: Track[] = [];
       const blobsToPut: AudioBlobRecord[] = [];
 
-      for (let idx = 0; idx < items.length; idx++) {
-        const item = items[idx];
+      for (let idx = 0; idx < preparedItems.length; idx++) {
+        const item = preparedItems[idx];
         if (existingFpSet.has(item.track.fingerprint)) {
           duplicateFingerprints.push(item.track.fingerprint);
           continue;
@@ -380,6 +543,7 @@ export async function saveTrackBatch(items: StagedTrackImport[]): Promise<SaveTr
 
         tracksToPut.push({
           ...item.track,
+          fileSize: fileBytes,
           storageSection: assignedSection,
         });
         blobsToPut.push({
@@ -397,9 +561,11 @@ export async function saveTrackBatch(items: StagedTrackImport[]): Promise<SaveTr
       if (artworksToPut.length > 0) {
         await sonoraDb.artworks.bulkPut(artworksToPut);
       }
+      if (blobsToPut.length > 0) {
+        await sonoraDb.audioBlobs.bulkPut(blobsToPut);
+      }
       if (tracksToPut.length > 0) {
         await sonoraDb.tracks.bulkPut(tracksToPut);
-        await sonoraDb.audioBlobs.bulkPut(blobsToPut);
       }
     }
   );
@@ -446,19 +612,153 @@ export async function updateTrackMetadata(
     album: string;
     albumArtist: string;
     genre: string;
+    composer?: string;
     year: number | null;
     trackNumber: number | null;
+    discNumber?: number | null;
+    rating?: number | null;
+    customTags?: Record<string, string>;
+    artworkFile?: { blob: Blob; mimeType: string } | null;
   }
 ): Promise<void> {
-  await sonoraDb.tracks.update(trackId, {
-    title: updates.title.trim() || 'Unknown Title',
-    artist: updates.artist.trim() || 'Unknown Artist',
-    album: updates.album.trim() || 'Unknown Album',
-    albumArtist: updates.albumArtist.trim() || updates.artist.trim() || 'Unknown Artist',
-    genre: updates.genre.trim(),
-    year: updates.year,
-    trackNumber: updates.trackNumber,
+  await sonoraDb.transaction('rw', [sonoraDb.tracks, sonoraDb.artworks], async () => {
+    const existing = await sonoraDb.tracks.get(trackId);
+    if (!existing) return;
+
+    let artworkId = existing.artworkId;
+    if (updates.artworkFile) {
+      const newArtId = `art_custom_${crypto.randomUUID().slice(0, 16)}`;
+      await sonoraDb.artworks.put({
+        id: newArtId,
+        blob: updates.artworkFile.blob,
+        mimeType: updates.artworkFile.mimeType || 'image/jpeg',
+        byteSize: updates.artworkFile.blob.size,
+      });
+      artworkId = newArtId;
+    }
+
+    const previousMetadataSnapshot = {
+      title: existing.title,
+      artist: existing.artist,
+      album: existing.album,
+      albumArtist: existing.albumArtist,
+      genre: existing.genre,
+      composer: existing.composer,
+      year: existing.year,
+      trackNumber: existing.trackNumber,
+      discNumber: existing.discNumber,
+      rating: existing.rating ?? null,
+      customTags: existing.customTags,
+    };
+
+    await sonoraDb.tracks.update(trackId, {
+      title: updates.title.trim() || 'Unknown Title',
+      artist: updates.artist.trim() || 'Unknown Artist',
+      album: updates.album.trim() || 'Unknown Album',
+      albumArtist: updates.albumArtist.trim() || updates.artist.trim() || 'Unknown Artist',
+      genre: updates.genre.trim(),
+      composer: updates.composer?.trim() ?? existing.composer ?? '',
+      year: updates.year,
+      trackNumber: updates.trackNumber,
+      discNumber:
+        typeof updates.discNumber !== 'undefined' ? updates.discNumber : existing.discNumber,
+      rating: typeof updates.rating !== 'undefined' ? updates.rating : existing.rating ?? null,
+      customTags:
+        typeof updates.customTags !== 'undefined' ? updates.customTags : existing.customTags,
+      artworkId,
+      previousMetadataSnapshot,
+    });
   });
+}
+
+export async function bulkUpdateTracksMetadata(
+  trackIds: string[],
+  patch: {
+    artist?: string;
+    album?: string;
+    albumArtist?: string;
+    genre?: string;
+    composer?: string;
+    year?: number | null;
+    rating?: number | null;
+  }
+): Promise<number> {
+  if (trackIds.length === 0) return 0;
+  let updatedCount = 0;
+  await sonoraDb.transaction('rw', sonoraDb.tracks, async () => {
+    for (const id of trackIds) {
+      const existing = await sonoraDb.tracks.get(id);
+      if (!existing) continue;
+      const previousMetadataSnapshot = {
+        title: existing.title,
+        artist: existing.artist,
+        album: existing.album,
+        albumArtist: existing.albumArtist,
+        genre: existing.genre,
+        composer: existing.composer,
+        year: existing.year,
+        trackNumber: existing.trackNumber,
+        discNumber: existing.discNumber,
+        rating: existing.rating ?? null,
+        customTags: existing.customTags,
+      };
+      await sonoraDb.tracks.update(id, {
+        artist: patch.artist?.trim() ? patch.artist.trim() : existing.artist,
+        album: patch.album?.trim() ? patch.album.trim() : existing.album,
+        albumArtist: patch.albumArtist?.trim() ? patch.albumArtist.trim() : existing.albumArtist,
+        genre: typeof patch.genre === 'string' && patch.genre.trim() ? patch.genre.trim() : existing.genre,
+        composer:
+          typeof patch.composer === 'string' && patch.composer.trim()
+            ? patch.composer.trim()
+            : existing.composer,
+        year: typeof patch.year !== 'undefined' ? patch.year : existing.year,
+        rating: typeof patch.rating !== 'undefined' ? patch.rating : existing.rating,
+        previousMetadataSnapshot,
+      });
+      updatedCount++;
+    }
+  });
+  return updatedCount;
+}
+
+export async function undoTrackMetadataUpdate(trackId: string): Promise<boolean> {
+  const existing = await sonoraDb.tracks.get(trackId);
+  if (!existing?.previousMetadataSnapshot) return false;
+  const snap = existing.previousMetadataSnapshot;
+  await sonoraDb.tracks.update(trackId, {
+    ...snap,
+    previousMetadataSnapshot: undefined,
+  });
+  return true;
+}
+
+export async function softDeleteTracks(trackIds: string[]): Promise<number> {
+  if (trackIds.length === 0) return 0;
+  const now = Date.now();
+  let count = 0;
+  await sonoraDb.transaction('rw', sonoraDb.tracks, async () => {
+    for (const id of trackIds) {
+      const t = await sonoraDb.tracks.get(id);
+      if (!t || t.deletedAt) continue;
+      await sonoraDb.tracks.update(id, { deletedAt: now });
+      count++;
+    }
+  });
+  return count;
+}
+
+export async function restoreSoftDeletedTracks(trackIds: string[]): Promise<number> {
+  if (trackIds.length === 0) return 0;
+  let count = 0;
+  await sonoraDb.transaction('rw', sonoraDb.tracks, async () => {
+    for (const id of trackIds) {
+      const t = await sonoraDb.tracks.get(id);
+      if (!t || !t.deletedAt) continue;
+      await sonoraDb.tracks.update(id, { deletedAt: null });
+      count++;
+    }
+  });
+  return count;
 }
 
 export async function removeTrackCompletely(trackId: string): Promise<void> {
@@ -471,6 +771,8 @@ export async function removeTrackCompletely(trackId: string): Promise<void> {
       sonoraDb.playlistTracks,
       sonoraDb.favorites,
       sonoraDb.recentlyPlayed,
+      sonoraDb.lyrics,
+      sonoraDb.processedStems,
     ],
     async () => {
       const track = await sonoraDb.tracks.get(trackId);
@@ -479,6 +781,8 @@ export async function removeTrackCompletely(trackId: string): Promise<void> {
       await sonoraDb.playlistTracks.where('trackId').equals(trackId).delete();
       await sonoraDb.favorites.delete(trackId);
       await sonoraDb.recentlyPlayed.where('trackId').equals(trackId).delete();
+      await sonoraDb.lyrics.delete(trackId);
+      await sonoraDb.processedStems.where('trackId').equals(trackId).delete();
 
       if (track?.artworkId) {
         const remainingRefs = await sonoraDb.tracks
@@ -518,6 +822,33 @@ export async function recordTrackPlay(trackId: string): Promise<void> {
   });
 }
 
+export async function recordTrackSkip(trackId: string): Promise<void> {
+  const track = await sonoraDb.tracks.get(trackId);
+  if (!track) return;
+  await sonoraDb.tracks.update(trackId, {
+    skipCount: (track.skipCount || 0) + 1,
+  });
+}
+
+export async function recordListeningSessionEvent(
+  trackId: string,
+  durationListenedSec: number,
+  skipped: boolean
+): Promise<void> {
+  if (durationListenedSec < 3 && !skipped) return;
+  const now = new Date();
+  const dayKey = now.toISOString().slice(0, 10);
+  const monthKey = now.toISOString().slice(0, 7);
+  await sonoraDb.listeningEvents.add({
+    trackId,
+    startedAt: now.getTime(),
+    durationListenedSec: Math.round(durationListenedSec),
+    dayKey,
+    monthKey,
+    skipped,
+  });
+}
+
 export async function logTransferHistory(
   entry: Omit<TransferHistoryRecord, 'id'>
 ): Promise<void> {
@@ -525,18 +856,29 @@ export async function logTransferHistory(
 }
 
 export async function getStorageBreakdown(): Promise<StorageBreakdown> {
-  const [estimate, trackCount, artworkCount, allocations, sectionStats] = await Promise.all([
-    getStorageEstimate(),
-    sonoraDb.tracks.count(),
-    sonoraDb.artworks.count(),
-    ensureStorageAllocations(),
-    getSectionUsedBytes(),
-  ]);
+  const [estimate, allTracks, artworkCount, allocations, sectionStats, blobKeys] =
+    await Promise.all([
+      getStorageEstimate(),
+      sonoraDb.tracks.toArray(),
+      sonoraDb.artworks.count(),
+      ensureStorageAllocations(),
+      getSectionUsedBytes(),
+      sonoraDb.audioBlobs.toCollection().primaryKeys(),
+    ]);
 
   let artworkBytes = 0;
   await sonoraDb.artworks.each((a) => {
     artworkBytes += a.byteSize || a.blob?.size || 0;
   });
+
+  const blobKeySet = new Set(blobKeys);
+  const localTracks = allTracks.filter((t) => t.sourceType === 'local');
+  let verifiedBlobCount = 0;
+  let missingBlobCount = 0;
+  for (const t of localTracks) {
+    if (blobKeySet.has(t.id)) verifiedBlobCount += 1;
+    else missingBlobCount += 1;
+  }
 
   const s1Alloc = allocations.find((a) => a.id === 'storage1')!;
   const s2Alloc = allocations.find((a) => a.id === 'storage2')!;
@@ -549,8 +891,10 @@ export async function getStorageBreakdown(): Promise<StorageBreakdown> {
     quotaBytes: estimate.quotaBytes,
     audioBytes: s1Used + s2Used,
     artworkBytes,
-    trackCount,
+    trackCount: allTracks.length,
     artworkCount,
+    verifiedBlobCount,
+    missingBlobCount,
     persisted: estimate.persisted,
     totalConfiguredBytes:
       s1Alloc.configuredCapacityBytes + s2Alloc.configuredCapacityBytes,

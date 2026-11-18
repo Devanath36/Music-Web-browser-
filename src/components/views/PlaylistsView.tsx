@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Download,
@@ -7,8 +7,15 @@ import {
   Play,
   Plus,
   Trash2,
+  Upload,
 } from 'lucide-react';
-import { generatePlaylistM3U, triggerTextDownload } from '../../db/exportBackup';
+import {
+  generatePlaylistM3U,
+  generatePlaylistM3U8,
+  generatePlaylistsJson,
+  importPlaylistsJsonIntoDb,
+  triggerTextDownload,
+} from '../../db/exportBackup';
 import { useLibraryStore } from '../../store/useLibraryStore';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import type { Playlist, Track } from '../../types/music';
@@ -26,6 +33,7 @@ export const PlaylistsView: React.FC = () => {
   const renamePlaylist = useLibraryStore((s) => s.renamePlaylist);
   const deletePlaylist = useLibraryStore((s) => s.deletePlaylist);
   const removeTrackFromPlaylist = useLibraryStore((s) => s.removeTrackFromPlaylist);
+  const refreshLibrary = useLibraryStore((s) => s.refreshLibrary);
 
   const playTrackList = usePlayerStore((s) => s.playTrackList);
 
@@ -33,6 +41,11 @@ export const PlaylistsView: React.FC = () => {
   const [confirmDeletePl, setConfirmDeletePl] = useState<Playlist | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [importReport, setImportReport] = useState<{
+    message: string;
+    missingTracks: string[];
+  } | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const trackMap = useMemo(() => new Map(tracks.map((t) => [t.id, t])), [tracks]);
 
@@ -49,6 +62,26 @@ export const PlaylistsView: React.FC = () => {
       .map((pt) => trackMap.get(pt.trackId))
       .filter((t): t is Track => !!t);
   }, [selectedPlaylist, playlistTracks, trackMap]);
+
+  const handleImportJsonFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const res = await importPlaylistsJsonIntoDb(text);
+      await refreshLibrary();
+      setImportReport({
+        message: `Imported ${res.importedPlaylists} playlist(s) with ${res.matchedTracks} matched track(s).`,
+        missingTracks: res.missingTracks,
+      });
+    } catch (err) {
+      setImportReport({
+        message: err instanceof Error ? err.message : 'Failed to import playlist JSON file.',
+        missingTracks: [],
+      });
+    }
+  };
 
   if (selectedPlaylist) {
     return (
@@ -126,7 +159,37 @@ export const PlaylistsView: React.FC = () => {
                   className="inline-flex items-center gap-1.5 min-h-[38px] px-3 py-2 rounded-xl border border-white/10 text-xs font-medium text-gray-300 hover:bg-white/5"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export M3U</span>
+                  <span>M3U</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const m3u8 = generatePlaylistM3U8(selectedPlaylist.name, selectedTracks);
+                    triggerTextDownload(
+                      `${selectedPlaylist.name.replace(/[^a-z0-9_-]/gi, '_')}.m3u8`,
+                      m3u8,
+                      'application/vnd.apple.mpegurl'
+                    );
+                  }}
+                  className="inline-flex items-center gap-1.5 min-h-[38px] px-3 py-2 rounded-xl border border-white/10 text-xs font-medium text-gray-300 hover:bg-white/5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>M3U8</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const json = generatePlaylistsJson([selectedPlaylist], playlistTracks, tracks);
+                    triggerTextDownload(
+                      `${selectedPlaylist.name.replace(/[^a-z0-9_-]/gi, '_')}.sonora-playlist.json`,
+                      json,
+                      'application/json'
+                    );
+                  }}
+                  className="inline-flex items-center gap-1.5 min-h-[38px] px-3 py-2 rounded-xl border border-white/10 text-xs font-medium text-gray-300 hover:bg-white/5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>JSON</span>
                 </button>
                 <button
                   type="button"
@@ -158,7 +221,7 @@ export const PlaylistsView: React.FC = () => {
 
   return (
     <section className="flex flex-col flex-1 min-h-0">
-      <div className="flex items-center justify-between gap-4 pb-4 border-b border-white/[0.07]">
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/[0.07]">
         <div>
           <h1 className="font-display text-2xl font-bold text-white tracking-tight">Playlists</h1>
           <p className="text-xs text-gray-400 mt-0.5 tabular-nums">
@@ -166,15 +229,78 @@ export const PlaylistsView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-2 min-h-[40px] px-4 py-2 rounded-xl bg-red-600 text-xs font-semibold text-white hover:bg-red-500 transition-colors whitespace-nowrap"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Playlist</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json,application/json"
+            onChange={handleImportJsonFile}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 py-2 rounded-xl border border-white/10 text-xs font-medium text-gray-200 hover:bg-white/5 transition-colors whitespace-nowrap"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Import JSON</span>
+          </button>
+
+          {playlists.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const json = generatePlaylistsJson(playlists, playlistTracks, tracks);
+                triggerTextDownload(
+                  `sonora-all-playlists-${new Date().toISOString().slice(0, 10)}.json`,
+                  json,
+                  'application/json'
+                );
+              }}
+              className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 py-2 rounded-xl border border-white/10 text-xs font-medium text-gray-200 hover:bg-white/5 transition-colors whitespace-nowrap"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export All</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-2 min-h-[40px] px-4 py-2 rounded-xl bg-red-600 text-xs font-semibold text-white hover:bg-red-500 transition-colors whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Playlist</span>
+          </button>
+        </div>
       </div>
+
+      {importReport && (
+        <div className="mt-4 rounded-xl border border-white/10 bg-[#111216] p-3.5 text-xs space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-medium text-white">{importReport.message}</p>
+            <button
+              type="button"
+              onClick={() => setImportReport(null)}
+              className="text-gray-400 hover:text-white"
+            >
+              Dismiss
+            </button>
+          </div>
+          {importReport.missingTracks.length > 0 && (
+            <div className="text-amber-300 space-y-1">
+              <p>
+                {importReport.missingTracks.length} track(s) not currently in this browser&apos;s local library:
+              </p>
+              <ul className="list-disc pl-5 text-[11px] text-amber-200/80 max-h-24 overflow-y-auto">
+                {importReport.missingTracks.slice(0, 12).map((label, idx) => (
+                  <li key={idx}>{label}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto pt-5">
         {playlists.length === 0 ? (

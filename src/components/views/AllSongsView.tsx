@@ -1,10 +1,51 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowDownUp, Play, Plus, Radio, Shuffle, Upload } from 'lucide-react';
+import {
+  ArrowDownUp,
+  ListOrdered,
+  Play,
+  Plus,
+  Radio,
+  Repeat,
+  Repeat1,
+  Shuffle,
+  Sparkles,
+  Upload,
+} from 'lucide-react';
 import { useLibraryStore } from '../../store/useLibraryStore';
 import { usePlayerStore } from '../../store/usePlayerStore';
-import type { SortField } from '../../types/music';
+import type { SortDirection, SortField } from '../../types/music';
+import { sortTracks } from '../../utils/trackSort';
 import { OnlineStreamModal } from '../library/OnlineStreamModal';
 import { TrackList } from '../library/TrackList';
+
+type SortPresetId =
+  | 'az'
+  | 'za'
+  | 'addedAt'
+  | 'lastPlayedAt'
+  | 'playCount'
+  | 'artist'
+  | 'album'
+  | 'duration'
+  | 'fileSize';
+
+const SORT_PRESETS: {
+  id: SortPresetId;
+  label: string;
+  field: SortField;
+  defaultDir: SortDirection;
+  fixedDir?: SortDirection;
+}[] = [
+  { id: 'az', label: 'A to Z', field: 'title', defaultDir: 'asc', fixedDir: 'asc' },
+  { id: 'za', label: 'Z to A', field: 'title', defaultDir: 'desc', fixedDir: 'desc' },
+  { id: 'addedAt', label: 'Recently Added', field: 'addedAt', defaultDir: 'desc' },
+  { id: 'lastPlayedAt', label: 'Recently Played', field: 'lastPlayedAt', defaultDir: 'desc' },
+  { id: 'playCount', label: 'Most Played', field: 'playCount', defaultDir: 'desc' },
+  { id: 'artist', label: 'Artist Name', field: 'artist', defaultDir: 'asc' },
+  { id: 'album', label: 'Album Name', field: 'album', defaultDir: 'asc' },
+  { id: 'duration', label: 'Duration', field: 'duration', defaultDir: 'desc' },
+  { id: 'fileSize', label: 'File Size', field: 'fileSize', defaultDir: 'desc' },
+];
 
 export const AllSongsView: React.FC = () => {
   const tracks = useLibraryStore((s) => s.tracks);
@@ -15,7 +56,9 @@ export const AllSongsView: React.FC = () => {
 
   const playTrackList = usePlayerStore((s) => s.playTrackList);
   const shuffle = usePlayerStore((s) => s.shuffle);
-  const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
+  const smartShuffle = usePlayerStore((s) => s.smartShuffle);
+  const repeat = usePlayerStore((s) => s.repeat);
+  const setPlaybackOrder = usePlayerStore((s) => s.setPlaybackOrder);
 
   const [showStreamModal, setShowStreamModal] = useState(false);
 
@@ -29,34 +72,27 @@ export const AllSongsView: React.FC = () => {
             t.album.toLowerCase().includes(q) ||
             t.genre.toLowerCase().includes(q)
         )
-      : [...tracks];
+      : tracks;
 
-    const dir = settings.sortDir === 'asc' ? 1 : -1;
-    list.sort((a, b) => {
-      switch (settings.sortBy) {
-        case 'title':
-          return a.title.localeCompare(b.title) * dir;
-        case 'artist':
-          return a.artist.localeCompare(b.artist) * dir;
-        case 'album':
-          return a.album.localeCompare(b.album) * dir;
-        case 'duration':
-          return (a.duration - b.duration) * dir;
-        case 'lastPlayedAt':
-          return ((a.lastPlayedAt || 0) - (b.lastPlayedAt || 0)) * dir;
-        case 'addedAt':
-        default:
-          return (a.addedAt - b.addedAt) * dir;
-      }
-    });
-    return list;
+    return sortTracks(list, settings.sortBy, settings.sortDir);
   }, [tracks, searchQuery, settings.sortBy, settings.sortDir]);
 
-  const handleSortChange = (field: SortField) => {
-    if (settings.sortBy === field) {
-      setSort(field, settings.sortDir === 'asc' ? 'desc' : 'asc');
+  const activePresetId: SortPresetId = useMemo(() => {
+    if (settings.sortBy === 'title') {
+      return settings.sortDir === 'desc' ? 'za' : 'az';
+    }
+    return settings.sortBy;
+  }, [settings.sortBy, settings.sortDir]);
+
+  const handleSortPresetClick = (preset: (typeof SORT_PRESETS)[number]) => {
+    if (preset.fixedDir) {
+      void setSort(preset.field, preset.fixedDir);
+      return;
+    }
+    if (settings.sortBy === preset.field) {
+      void setSort(preset.field, settings.sortDir === 'asc' ? 'desc' : 'asc');
     } else {
-      setSort(field, field === 'addedAt' || field === 'lastPlayedAt' ? 'desc' : 'asc');
+      void setSort(preset.field, preset.defaultDir);
     }
   };
 
@@ -67,19 +103,20 @@ export const AllSongsView: React.FC = () => {
 
   const handleShuffleAll = async () => {
     if (filteredAndSorted.length === 0) return;
-    if (!shuffle) toggleShuffle();
+    if (!shuffle) setPlaybackOrder('shuffle');
     const randomIdx = Math.floor(Math.random() * filteredAndSorted.length);
     await playTrackList(filteredAndSorted.map((t) => t.id), randomIdx);
   };
 
-  const sortOptions: { field: SortField; label: string }[] = [
-    { field: 'addedAt', label: 'Added' },
-    { field: 'title', label: 'Title' },
-    { field: 'artist', label: 'Artist' },
-    { field: 'album', label: 'Album' },
-    { field: 'lastPlayedAt', label: 'Played' },
-    { field: 'duration', label: 'Duration' },
-  ];
+  const playbackOrderMode = smartShuffle
+    ? 'smart_shuffle'
+    : shuffle
+      ? 'shuffle'
+      : repeat === 'one'
+        ? 'repeat_one'
+        : repeat === 'all'
+          ? 'repeat_all'
+          : 'sequential';
 
   return (
     <section className="flex flex-col flex-1 min-h-0">
@@ -93,23 +130,73 @@ export const AllSongsView: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-[#111216] p-1">
-            {sortOptions.map(({ field, label }) => {
-              const active = settings.sortBy === field;
-              return (
-                <button
-                  key={field}
-                  type="button"
-                  onClick={() => handleSortChange(field)}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
-                    active ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  <span>{label}</span>
-                  {active && <ArrowDownUp className="w-3 h-3 text-red-400" />}
-                </button>
-              );
-            })}
+          {/* Playback Order Controls */}
+          <div
+            role="group"
+            aria-label="Playback order mode"
+            className="flex items-center gap-1 rounded-xl border border-white/10 bg-[#111216] p-1"
+          >
+            <button
+              type="button"
+              onClick={() => setPlaybackOrder('sequential')}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                playbackOrderMode === 'sequential'
+                  ? 'bg-white/10 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <ListOrdered className="w-3.5 h-3.5 text-red-400" />
+              <span>Sequential</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPlaybackOrder('shuffle')}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                playbackOrderMode === 'shuffle'
+                  ? 'bg-red-600/20 text-red-300'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Shuffle className="w-3.5 h-3.5" />
+              <span>Shuffle</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPlaybackOrder('smart_shuffle')}
+              title="Prioritizes less-frequently heard tracks matching your preferred genres and artists"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                playbackOrderMode === 'smart_shuffle'
+                  ? 'bg-red-600 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Smart Shuffle</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPlaybackOrder('repeat_all')}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                playbackOrderMode === 'repeat_all'
+                  ? 'bg-red-600/20 text-red-300'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Repeat className="w-3.5 h-3.5" />
+              <span>Repeat All</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPlaybackOrder('repeat_one')}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                playbackOrderMode === 'repeat_one'
+                  ? 'bg-red-600/20 text-red-300'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Repeat1 className="w-3.5 h-3.5" />
+              <span>Repeat One</span>
+            </button>
           </div>
 
           {settings.networkMode === 'online' && (
@@ -131,7 +218,7 @@ export const AllSongsView: React.FC = () => {
                 className="inline-flex items-center gap-2 min-h-[38px] px-3.5 py-2 rounded-xl border border-white/10 bg-[#111216] text-xs font-medium text-gray-200 hover:bg-white/10 transition-colors whitespace-nowrap"
               >
                 <Shuffle className="w-3.5 h-3.5" />
-                <span>Shuffle</span>
+                <span>Shuffle Play</span>
               </button>
               <button
                 type="button"
@@ -146,7 +233,35 @@ export const AllSongsView: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 pt-2 flex flex-col">
+      {/* Comprehensive Library Sort Bar (never alters active playback queue) */}
+      <div className="flex flex-wrap items-center gap-1.5 py-2.5 border-b border-white/[0.05]">
+        <span className="text-[11px] font-medium text-gray-500 mr-1 whitespace-nowrap">
+          Sort by:
+        </span>
+        {SORT_PRESETS.map((preset) => {
+          const active = activePresetId === preset.id;
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => handleSortPresetClick(preset)}
+              aria-pressed={active}
+              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                active
+                  ? 'bg-white/12 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
+              }`}
+            >
+              <span>{preset.label}</span>
+              {active && !preset.fixedDir && (
+                <ArrowDownUp className="w-3 h-3 text-red-400" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex-1 min-h-0 pt-1 flex flex-col">
         <TrackList
           tracks={filteredAndSorted}
           emptyTitle={searchQuery ? 'No matching tracks' : 'Your library is empty'}

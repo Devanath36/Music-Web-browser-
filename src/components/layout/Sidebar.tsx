@@ -1,16 +1,29 @@
 import React from 'react';
 import {
+  AlignLeft,
+  AudioLines,
+  BarChart3,
   Clock,
   Database,
+  Disc,
   Disc3,
+  Flame,
+  Folder,
   HardDrive,
   Heart,
   ListMusic,
   Mic2,
   Music,
+  Orbit,
+  Radio,
   Settings,
   Sliders,
+  SlidersHorizontal,
+  Sparkles,
+  Tag,
+  Trash2,
   Upload,
+  Wand2,
   Wifi,
 } from 'lucide-react';
 import { useLibraryStore } from '../../store/useLibraryStore';
@@ -27,15 +40,31 @@ const LIBRARY_ITEMS: NavItem[] = [
   { id: 'songs', label: 'All Songs', icon: Music },
   { id: 'albums', label: 'Albums', icon: Disc3 },
   { id: 'artists', label: 'Artists', icon: Mic2 },
+  { id: 'genres', label: 'Genres', icon: Tag },
+  { id: 'folders', label: 'Folders', icon: Folder },
   { id: 'playlists', label: 'Playlists', icon: ListMusic },
+  { id: 'smart_playlists', label: 'Smart Playlists', icon: SlidersHorizontal },
   { id: 'favorites', label: 'Favorites', icon: Heart },
   { id: 'recent', label: 'Recently Played', icon: Clock },
+  { id: 'most_played', label: 'Most Played', icon: Flame },
+  { id: 'dj_mixes', label: 'Saved DJ Mixes', icon: Radio },
+  { id: 'deleted', label: 'Recently Deleted', icon: Trash2 },
+];
+
+const INTELLIGENCE_ITEMS: NavItem[] = [
+  { id: 'recommendations', label: 'For You', icon: Sparkles },
+  { id: 'lyrics', label: 'Lyrics', icon: AlignLeft },
+  { id: 'listening_room', label: 'Listening Room', icon: Wand2 },
+  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { id: 'vocal_isolation', label: 'Vocal Isolation', icon: AudioLines },
 ];
 
 const UTILITY_ITEMS: NavItem[] = [
   { id: 'import', label: 'Import Music', icon: Upload },
   { id: 'transfer', label: 'Wi-Fi Transfer', icon: Wifi },
   { id: 'equalizer', label: 'Equalizer', icon: Sliders },
+  { id: 'spatial', label: 'Spatial Audio', icon: Orbit },
+  { id: 'dj', label: 'DJ Studio', icon: Disc },
   { id: 'storage', label: 'Storage Manager', icon: Database },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -49,6 +78,7 @@ export const Sidebar: React.FC = () => {
   const playlists = useLibraryStore((s) => s.playlists);
   const storageBreakdown = useLibraryStore((s) => s.storageBreakdown);
   const tracksCount = useLibraryStore((s) => s.tracks.length);
+  const deletedCount = useLibraryStore((s) => s.deletedTracks.length);
   const importJob = useLibraryStore((s) => s.importJob);
 
   const navigate = (view: AppView) => {
@@ -70,7 +100,7 @@ export const Sidebar: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
-        <nav aria-label="Library navigation" className="space-y-1">
+        <nav aria-label="Library navigation" className="space-y-0.5">
           {LIBRARY_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = activeView === item.id;
@@ -79,7 +109,39 @@ export const Sidebar: React.FC = () => {
                 key={item.id}
                 type="button"
                 onClick={() => navigate(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${
+                className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${
+                  active
+                    ? 'bg-red-600/15 text-red-400'
+                    : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
+                }`}
+              >
+                <span className="flex items-center gap-3">
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span>{item.label}</span>
+                </span>
+                {item.id === 'deleted' && deletedCount > 0 && (
+                  <span className="font-mono text-[11px] tabular-nums text-gray-500">
+                    {deletedCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        <nav aria-label="Experience and intelligence" className="space-y-0.5 pt-4 border-t border-white/[0.06]">
+          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            Intelligence &amp; Mode
+          </p>
+          {INTELLIGENCE_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = activeView === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => navigate(item.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${
                   active
                     ? 'bg-red-600/15 text-red-400'
                     : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
@@ -92,7 +154,10 @@ export const Sidebar: React.FC = () => {
           })}
         </nav>
 
-        <nav aria-label="Tools and settings" className="space-y-1 pt-4 border-t border-white/[0.06]">
+        <nav aria-label="Tools and settings" className="space-y-0.5 pt-4 border-t border-white/[0.06]">
+          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            Studio &amp; System
+          </p>
           {UTILITY_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = activeView === item.id;
@@ -101,7 +166,7 @@ export const Sidebar: React.FC = () => {
                 key={item.id}
                 type="button"
                 onClick={() => navigate(item.id)}
-                className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${
+                className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${
                   active
                     ? 'bg-red-600/15 text-red-400'
                     : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'

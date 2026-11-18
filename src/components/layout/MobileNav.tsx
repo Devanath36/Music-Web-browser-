@@ -1,16 +1,29 @@
 import React, { useState } from 'react';
 import {
+  AlignLeft,
+  AudioLines,
+  BarChart3,
   Clock,
   Database,
+  Disc,
   Disc3,
+  Flame,
+  Folder,
   Heart,
   ListMusic,
   Menu,
   Mic2,
   Music,
+  Orbit,
+  Radio,
   Settings,
   Sliders,
+  SlidersHorizontal,
+  Sparkles,
+  Tag,
+  Trash2,
   Upload,
+  Wand2,
   Wifi,
   X,
 } from 'lucide-react';
@@ -23,6 +36,7 @@ export const MobileNav: React.FC = () => {
   const setSelectedPlaylistId = useLibraryStore((s) => s.setSelectedPlaylistId);
   const setSelectedAlbumKey = useLibraryStore((s) => s.setSelectedAlbumKey);
   const setSelectedArtistName = useLibraryStore((s) => s.setSelectedArtistName);
+  const deletedCount = useLibraryStore((s) => s.deletedTracks.length);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const go = (view: AppView) => {
@@ -41,13 +55,51 @@ export const MobileNav: React.FC = () => {
   ];
 
   const isSecondaryActive =
-    activeView === 'favorites' ||
-    activeView === 'artists' ||
-    activeView === 'recent' ||
-    activeView === 'transfer' ||
-    activeView === 'equalizer' ||
-    activeView === 'storage' ||
-    activeView === 'settings';
+    activeView !== 'songs' &&
+    activeView !== 'albums' &&
+    activeView !== 'playlists' &&
+    activeView !== 'import';
+
+  const secondaryGroups: Array<{
+    heading: string;
+    items: Array<{ id: AppView; label: string; icon: React.FC<{ className?: string }>; count?: number }>;
+  }> = [
+    {
+      heading: 'Library Views',
+      items: [
+        { id: 'favorites', label: 'Favorites', icon: Heart },
+        { id: 'artists', label: 'Artists', icon: Mic2 },
+        { id: 'genres', label: 'Genres', icon: Tag },
+        { id: 'folders', label: 'Folders', icon: Folder },
+        { id: 'smart_playlists', label: 'Smart Playlists', icon: SlidersHorizontal },
+        { id: 'recent', label: 'Recently Played', icon: Clock },
+        { id: 'most_played', label: 'Most Played', icon: Flame },
+        { id: 'dj_mixes', label: 'Saved DJ Mixes', icon: Radio },
+        { id: 'deleted', label: 'Recently Deleted', icon: Trash2, count: deletedCount },
+      ],
+    },
+    {
+      heading: 'Intelligence & Immersion',
+      items: [
+        { id: 'recommendations', label: 'For You', icon: Sparkles },
+        { id: 'lyrics', label: 'Lyrics', icon: AlignLeft },
+        { id: 'listening_room', label: 'Listening Room', icon: Wand2 },
+        { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+        { id: 'vocal_isolation', label: 'Vocal Isolation', icon: AudioLines },
+      ],
+    },
+    {
+      heading: 'Audio & System',
+      items: [
+        { id: 'transfer', label: 'Wi-Fi Transfer', icon: Wifi },
+        { id: 'equalizer', label: 'Equalizer', icon: Sliders },
+        { id: 'spatial', label: 'Spatial Audio', icon: Orbit },
+        { id: 'dj', label: 'DJ Studio', icon: Disc },
+        { id: 'storage', label: 'Storage Manager', icon: Database },
+        { id: 'settings', label: 'Settings', icon: Settings },
+      ],
+    },
+  ];
 
   return (
     <>
@@ -57,7 +109,7 @@ export const MobileNav: React.FC = () => {
           onClick={() => setMoreOpen(false)}
         >
           <div
-            className="w-full rounded-t-3xl border-t border-white/10 bg-[#111216] p-5 pb-8 space-y-1.5 max-h-[80vh] overflow-y-auto"
+            className="w-full rounded-t-3xl border-t border-white/10 bg-[#111216] p-5 pb-8 space-y-4 max-h-[82vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
@@ -74,31 +126,37 @@ export const MobileNav: React.FC = () => {
               </button>
             </div>
 
-            {[
-              { id: 'favorites' as AppView, label: 'Favorites', icon: Heart },
-              { id: 'artists' as AppView, label: 'Artists', icon: Mic2 },
-              { id: 'recent' as AppView, label: 'Recently Played', icon: Clock },
-              { id: 'transfer' as AppView, label: 'Wi-Fi Transfer', icon: Wifi },
-              { id: 'equalizer' as AppView, label: 'Equalizer', icon: Sliders },
-              { id: 'storage' as AppView, label: 'Storage Manager', icon: Database },
-              { id: 'settings' as AppView, label: 'Settings', icon: Settings },
-            ].map((item) => {
-              const Icon = item.icon;
-              const active = activeView === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => go(item.id)}
-                  className={`w-full min-h-[48px] flex items-center gap-3.5 px-4 rounded-xl text-sm font-medium ${
-                    active ? 'bg-red-600/15 text-red-400' : 'text-gray-200 hover:bg-white/5'
-                  }`}
-                >
-                  <Icon className="w-5 h-5" />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
+            {secondaryGroups.map((group) => (
+              <div key={group.heading} className="space-y-1">
+                <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                  {group.heading}
+                </p>
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const active = activeView === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => go(item.id)}
+                      className={`w-full min-h-[46px] flex items-center justify-between gap-3 px-4 rounded-xl text-sm font-medium ${
+                        active ? 'bg-red-600/15 text-red-400' : 'text-gray-200 hover:bg-white/5'
+                      }`}
+                    >
+                      <span className="flex items-center gap-3.5">
+                        <Icon className="w-4 h-4 shrink-0" />
+                        <span>{item.label}</span>
+                      </span>
+                      {typeof item.count === 'number' && item.count > 0 && (
+                        <span className="font-mono text-xs tabular-nums text-gray-400">
+                          {item.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </div>
       )}
